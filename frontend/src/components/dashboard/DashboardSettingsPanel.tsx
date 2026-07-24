@@ -8,7 +8,7 @@ interface DashboardSettingsPanelProps {
   onClose: () => void;
 }
 
-/** Sakelar on/off yang aksesibel (peran switch). */
+/** Sakelar on/off yang aksesibel (peran switch), warna hangat "Cafe Ambient". */
 function Toggle({
   checked,
   onChange,
@@ -25,9 +25,8 @@ function Toggle({
       aria-checked={checked}
       aria-label={label}
       onClick={() => onChange(!checked)}
-      className={`relative h-6 w-11 shrink-0 rounded-full transition ${
-        checked ? 'bg-brand-600' : 'bg-slate-300'
-      }`}
+      className="relative h-6 w-11 shrink-0 rounded-full transition-colors"
+      style={{ backgroundColor: checked ? 'var(--color-amber)' : '#d8cabb' }}
     >
       <span
         className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
@@ -53,19 +52,35 @@ export default function DashboardSettingsPanel({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
+      style={{ fontFamily: 'var(--font-data)' }}
+    >
       <button
         type="button"
         aria-label="Tutup pengaturan"
         onClick={onClose}
-        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+        className="absolute inset-0 backdrop-blur-sm"
+        style={{ backgroundColor: 'rgba(26,18,8,0.35)' }}
       />
 
-      <div className="relative w-full max-w-lg rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl">
+      <div
+        className="relative w-full max-w-lg rounded-t-3xl p-5 shadow-2xl sm:rounded-3xl"
+        style={{ backgroundColor: 'var(--color-paper)', border: '1px solid var(--color-border)' }}
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">Sesuaikan Dasbor</h2>
-            <p className="text-sm text-slate-500">
+            <h2
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontSize: 18,
+                fontWeight: 500,
+                color: 'var(--color-espresso)',
+              }}
+            >
+              Sesuaikan Dasbor
+            </h2>
+            <p style={{ fontSize: 13, color: 'var(--color-muted)' }}>
               Pilih metrik yang ingin tampil di halaman utama.
             </p>
           </div>
@@ -73,7 +88,8 @@ export default function DashboardSettingsPanel({
             type="button"
             onClick={onClose}
             aria-label="Tutup"
-            className="rounded-full p-1.5 text-slate-400 transition hover:bg-slate-100"
+            className="rounded-full p-1.5 transition-colors hover:bg-[rgba(26,18,8,0.06)]"
+            style={{ color: 'var(--color-muted)' }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -81,15 +97,26 @@ export default function DashboardSettingsPanel({
           </button>
         </div>
 
-        <ul className="mt-4 divide-y divide-slate-100">
+        <ul className="mt-4">
           {WIDGET_OPTIONS.map((opt) => (
-            <li key={opt.key} className="flex items-center gap-3 py-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-lg">
+            <li
+              key={opt.key}
+              className="flex items-center gap-3 py-3"
+              style={{ borderTop: '1px solid rgba(26,18,8,0.06)' }}
+            >
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-lg"
+                style={{ backgroundColor: 'rgba(26,18,8,0.05)' }}
+              >
                 {opt.icon}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="font-semibold text-slate-800">{opt.label}</p>
-                <p className="truncate text-sm text-slate-500">{opt.description}</p>
+                <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-espresso)' }}>
+                  {opt.label}
+                </p>
+                <p className="truncate" style={{ fontSize: 13, color: 'var(--color-muted)' }}>
+                  {opt.description}
+                </p>
               </div>
               <Toggle
                 checked={prefs[opt.key]}
@@ -105,14 +132,21 @@ export default function DashboardSettingsPanel({
             type="button"
             onClick={onReset}
             disabled={isDefault}
-            className="flex-1 rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-200 disabled:opacity-50"
+            className="flex-1 rounded-xl py-2.5 transition-colors disabled:opacity-50 hover:bg-[rgba(26,18,8,0.09)]"
+            style={{
+              fontSize: 14,
+              fontWeight: 500,
+              backgroundColor: 'rgba(26,18,8,0.06)',
+              color: 'var(--color-subtle)',
+            }}
           >
             Kembalikan Bawaan
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 rounded-xl bg-brand-600 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700"
+            className="flex-1 rounded-xl py-2.5 text-white transition-colors hover:brightness-95"
+            style={{ fontSize: 14, fontWeight: 500, backgroundColor: 'var(--color-amber)' }}
           >
             Selesai
           </button>

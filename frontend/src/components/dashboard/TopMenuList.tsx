@@ -1,23 +1,29 @@
 import { useCallback, useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import type { TopMenuItemDTO } from '../../types/api';
-import type { RevenuePeriod } from '../../types/dashboard';
+import { REVENUE_PERIODS, type RevenuePeriod } from '../../types/dashboard';
 import { dashboardApi } from '../../api/dashboard';
 import { describeApiError } from '../../lib/apiClient';
 import { subscribeRealtime } from '../../lib/realtime';
-import MenuItemImage from '../menu/MenuItemImage';
 
 interface TopMenuListProps {
   cafeId: string;
   period?: RevenuePeriod;
 }
 
+/** Warna bar magnitude per peringkat (nilai selalu tertulis sebagai angka). */
+function barColor(rank: number): string {
+  if (rank === 1) return 'var(--color-amber)';
+  if (rank <= 3) return '#d8c0a0';
+  return '#e8d5b8';
+}
+
 /**
- * Daftar menu terlaris — perbandingan magnitude (porsi terjual) antar item.
- *
- * Satu seri data, jadi seluruh bar memakai SATU warna (bukan warna per
- * peringkat); nilainya selalu ditulis sebagai angka sehingga tidak bergantung
- * pada warna saja. Peringkat dihitung backend dan diambil ulang setiap ada
- * pesanan dibayar (event `dashboard.order.paid`).
+ * Daftar menu terlaris — perbandingan magnitude (porsi terjual) antar item,
+ * dalam gaya "Cafe Ambient". Warna bar mengikuti peringkat, tetapi jumlahnya
+ * selalu ditulis sebagai angka sehingga tidak bergantung pada warna saja.
+ * Peringkat dihitung backend dan diambil ulang setiap ada pesanan dibayar
+ * (event `dashboard.order.paid`).
  */
 export default function TopMenuList({ cafeId, period = 'today' }: TopMenuListProps) {
   const [items, setItems] = useState<TopMenuItemDTO[]>([]);
@@ -66,74 +72,94 @@ export default function TopMenuList({ cafeId, period = 'today' }: TopMenuListPro
   }, [cafeId, load]);
 
   const max = Math.max(...items.map((i) => i.soldCount), 1);
+  const periodLabel = REVENUE_PERIODS.find((p) => p.key === period)?.label.toLowerCase();
 
   return (
-    <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <section
+      className="card-warm rounded-2xl px-6 py-5"
+      style={{ fontFamily: 'var(--font-data)' }}
+    >
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-base font-bold text-slate-900">Menu Terlaris</h2>
-        <span className="text-xs text-slate-400">porsi terjual</span>
+        <h2 style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-espresso)' }}>
+          Menu terlaris
+        </h2>
+        <span style={{ fontSize: 10, color: 'var(--color-muted)' }}>{periodLabel}</span>
       </div>
 
       {error ? (
-        <p className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">
+        <p
+          className="mt-4 rounded-xl px-3 py-2"
+          style={{ fontSize: 13, backgroundColor: '#fbeceb', color: '#b4231c' }}
+        >
           {error}
         </p>
       ) : loading ? (
-        <div role="status" aria-label="Memuat menu terlaris" className="mt-4 space-y-3.5">
+        <div role="status" aria-label="Memuat menu terlaris" className="mt-4 space-y-3">
           {Array.from({ length: 5 }, (_, index) => (
-            <div key={index} aria-hidden className="h-9 animate-pulse rounded-lg bg-slate-100" />
+            <div key={index} aria-hidden className="skeleton-warm h-8 rounded-lg" />
           ))}
         </div>
       ) : items.length === 0 ? (
-        <p className="mt-4 text-sm text-slate-400">
+        <p className="mt-4" style={{ fontSize: 13, color: 'var(--color-muted)' }}>
           Belum ada penjualan pada periode ini.
         </p>
       ) : (
-        <ol className="mt-4 space-y-3.5">
+        <ol className="mt-3">
           {items.map((item, index) => {
+            const rank = index + 1;
             const percent = (item.soldCount / max) * 100;
             const flashing = item.menuItemId === flashId;
+            const countColor =
+              flashing || rank === 1 ? 'var(--color-amber)' : 'var(--color-muted)';
 
             return (
               <li
                 key={item.menuItemId}
-                className="flex items-center gap-3"
-                title={`${item.name} — ${item.soldCount} porsi terjual`}
+                style={{ borderBottom: '1px solid rgba(26,18,8,0.05)' }}
               >
-                <span className="w-4 shrink-0 text-sm font-bold text-slate-400 tabular-nums">
-                  {index + 1}
-                </span>
-
-                <MenuItemImage
-                  src={item.imageUrl}
-                  alt={item.name}
-                  className="h-9 w-9 shrink-0 rounded-lg"
-                />
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="truncate text-sm font-semibold text-slate-800">
-                      {item.name}
-                    </p>
-                    <span
-                      className={`shrink-0 text-sm font-bold tabular-nums transition-colors duration-500 ${
-                        flashing ? 'text-brand-600' : 'text-slate-700'
-                      }`}
-                    >
-                      {item.soldCount}
-                    </span>
-                  </div>
-
-                  {/* Bar magnitude — track recessive, satu warna untuk satu seri. */}
-                  <div
-                    className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100"
-                    role="presentation"
+                <div
+                  className="flex items-center gap-3 rounded-md px-1.5 py-2.5 transition-colors hover:bg-[rgba(26,18,8,0.02)]"
+                  title={`${item.name} — ${item.soldCount} porsi terjual`}
+                >
+                  <span
+                    className="w-4 shrink-0 text-center"
+                    style={{
+                      fontFamily: 'var(--font-display)',
+                      fontSize: 13,
+                      color: 'var(--color-subtle)',
+                    }}
                   >
-                    <div
-                      className="h-full rounded-full bg-brand-500 transition-all duration-700"
-                      style={{ width: `${percent}%` }}
+                    {rank}
+                  </span>
+
+                  <span
+                    className="shrink-0 basis-2/5 truncate"
+                    style={{ fontSize: 13, color: 'var(--color-espresso)' }}
+                  >
+                    {item.name}
+                  </span>
+
+                  <div className="min-w-0 flex-1" role="presentation">
+                    <motion.div
+                      className="rounded-[3px]"
+                      style={{ height: 5, backgroundColor: barColor(rank) }}
+                      initial={{ width: 0 }}
+                      whileInView={{ width: `${percent}%` }}
+                      viewport={{ once: true, margin: '-40px' }}
+                      transition={{
+                        duration: 0.7,
+                        delay: index * 0.1,
+                        ease: [0.22, 1, 0.36, 1],
+                      }}
                     />
                   </div>
+
+                  <span
+                    className="w-9 shrink-0 text-right tabular-nums transition-colors duration-500"
+                    style={{ fontSize: 12, fontWeight: 500, color: countColor }}
+                  >
+                    {item.soldCount}
+                  </span>
                 </div>
               </li>
             );

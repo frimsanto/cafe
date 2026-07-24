@@ -10,6 +10,8 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@studio-freight/lenis": "^1.0.42",
+    "framer-motion": "^12.42.2",
     "jspdf": "^4.2.1",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",

@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
+import Lenis from '@studio-freight/lenis';
 import { CartProvider } from './cart/CartContext';
 import { AuthProvider } from './auth/AuthContext';
 import { TableSessionProvider } from './table/TableSessionContext';
@@ -35,6 +37,23 @@ function CustomerRoute({ children }: { children: React.ReactNode }) {
  * berpindah antar halaman.
  */
 export default function App() {
+  // Smooth scroll global (Lenis). RAF loop dibersihkan saat unmount agar tidak
+  // bertumpuk saat HMR / StrictMode menjalankan efek dua kali.
+  useEffect(() => {
+    const lenis = new Lenis({
+      duration: 1.2,
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+    });
+    let rafId = requestAnimationFrame(function raf(time) {
+      lenis.raf(time);
+      rafId = requestAnimationFrame(raf);
+    });
+    return () => {
+      cancelAnimationFrame(rafId);
+      lenis.destroy();
+    };
+  }, []);
+
   return (
     <AuthProvider>
       <CartProvider>

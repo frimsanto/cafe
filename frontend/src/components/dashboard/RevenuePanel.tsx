@@ -10,6 +10,7 @@ import { describeApiError } from '../../lib/apiClient';
 import { subscribeRealtime } from '../../lib/realtime';
 import { formatRupiah } from '../../lib/format';
 import PeriodSelector from './PeriodSelector';
+import OdometerNumber from './OdometerNumber';
 
 function relativeLabel(seconds: number): string {
   if (seconds < 5) return 'baru saja';
@@ -19,7 +20,7 @@ function relativeLabel(seconds: number): string {
 }
 
 /**
- * Metrik omzet dengan pemilih periode.
+ * Metrik omzet dengan pemilih periode — kartu hero dasbor "Cafe Ambient".
  *
  * Angkanya dihitung backend (`GET /dashboard/revenue?period=…`) — hanya
  * pesanan dengan pembayaran SUKSES yang masuk hitungan. Pembaruan langsung
@@ -92,14 +93,36 @@ export default function RevenuePanel({ cafeId }: { cafeId: string }) {
   const secondsAgo = Math.max(0, Math.floor((now - lastUpdate) / 1000));
 
   return (
-    <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <section
+      className="card-warm rounded-2xl px-7 py-6"
+      style={{ fontFamily: 'var(--font-data)' }}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold text-slate-900">Omzet</h2>
-          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          <p
+            className="uppercase"
+            style={{
+              fontSize: 10,
+              fontWeight: 500,
+              letterSpacing: '0.1em',
+              color: 'var(--color-muted)',
+            }}
+          >
+            Omzet {meta.label.toLowerCase()}
+          </p>
+          <p
+            className="mt-1 flex items-center gap-1.5"
+            style={{ fontSize: 11, color: 'var(--color-muted)' }}
+          >
+            <span className="relative flex h-1.5 w-1.5">
+              <span
+                className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
+                style={{ backgroundColor: 'var(--color-success)' }}
+              />
+              <span
+                className="relative inline-flex h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: 'var(--color-success)' }}
+              />
             </span>
             Live · diperbarui {relativeLabel(secondsAgo)}
           </p>
@@ -108,44 +131,50 @@ export default function RevenuePanel({ cafeId }: { cafeId: string }) {
       </div>
 
       {error ? (
-        <p className="mt-5 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">
+        <p
+          className="mt-5 rounded-xl px-3 py-2"
+          style={{ fontSize: 13, backgroundColor: '#fbeceb', color: '#b4231c' }}
+        >
           {error}
         </p>
       ) : loading ? (
         <div
           role="status"
           aria-label="Memuat omzet"
-          className="mt-5 h-10 w-56 animate-pulse rounded-lg bg-slate-100 lg:h-11"
+          className="skeleton-warm mt-5 h-11 w-64 rounded-lg"
         />
       ) : (
         <>
-          <p
-            className={`mt-5 text-3xl font-bold tracking-tight tabular-nums transition-colors duration-500 lg:text-4xl ${
-              flash ? 'text-brand-600' : 'text-slate-900'
-            }`}
-          >
-            {formatRupiah(summary?.revenue ?? 0)}
-          </p>
+          <OdometerNumber
+            value={summary?.revenue ?? 0}
+            format={formatRupiah}
+            className="mt-4 block"
+            style={{
+              fontSize: 40,
+              fontWeight: 500,
+              letterSpacing: '-0.03em',
+              lineHeight: 1.1,
+              color: flash ? 'var(--color-amber)' : 'var(--color-espresso)',
+              transition: 'color 500ms ease',
+            }}
+          />
 
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          <div
+            className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1"
+            style={{ fontSize: 12 }}
+          >
             {delta !== null ? (
               <span
-                className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 font-semibold ${
-                  positive
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : 'bg-rose-50 text-rose-700'
-                }`}
+                style={{ fontWeight: 500, color: positive ? 'var(--color-success)' : '#b4231c' }}
               >
-                {positive ? '▲' : '▼'} {positive ? '+' : ''}
-                {delta.toFixed(1)}%{' '}
-                <span className="font-normal">
-                  {PERIOD_COMPARISON_LABEL[period]}
-                </span>
+                {positive ? '↑' : '↓'} {positive ? '+' : ''}
+                {delta.toFixed(1)}%
               </span>
             ) : (
-              <span className="text-slate-400">{meta.caption}</span>
+              <span style={{ color: 'var(--color-muted)' }}>{meta.caption}</span>
             )}
-            <span className="text-slate-400">
+            <span style={{ color: 'var(--color-muted)' }}>
+              {delta !== null ? `${PERIOD_COMPARISON_LABEL[period]} · ` : ''}
               {summary?.orderCount ?? 0} pesanan
             </span>
           </div>

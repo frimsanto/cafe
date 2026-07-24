@@ -1,3 +1,5 @@
+@import './styles/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -8,6 +10,23 @@
   }
   body {
     @apply bg-slate-100 text-slate-900 antialiased;
+  }
+}
+
+@layer components {
+  /* Kartu hangat dasbor "Cafe Ambient" — kertas + garis + bayangan lembut. */
+  .card-warm {
+    background-color: var(--color-paper);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-card);
+    transition: box-shadow 200ms ease, transform 200ms ease;
+  }
+  .card-warm:hover {
+    box-shadow: var(--shadow-card-hover);
+  }
+  /* Varian yang sedikit terangkat saat disorot. */
+  .card-warm-lift:hover {
+    transform: translateY(-2px);
   }
 }
 
@@ -41,6 +60,26 @@
   }
   .animate-slide-down {
     animation: slide-down 0.4s ease-out 0.2s both;
+  }
+
+  /* Skeleton pemuatan hangat — shimmer kiri→kanan (dasbor Cafe Ambient). */
+  @keyframes shimmer-warm {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+  .skeleton-warm {
+    background-image: linear-gradient(
+      90deg,
+      #e8d5b8 25%,
+      #f0e0c8 50%,
+      #e8d5b8 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer-warm 1.5s ease-in-out infinite;
   }
 }
 
