@@ -1,14 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { landingPathFor, ROLE_LABEL } from '../types/auth';
-import { mockAccounts } from '../data/mockUsers';
+import { landingPathFor } from '../types/auth';
 
 /**
  * Halaman masuk untuk staf & pemilik kafe.
  *
- * Fase frontend: kredensial diverifikasi ke akun demo (AuthContext tiruan).
- * Setelah berhasil, pengguna diarahkan sesuai perannya.
+ * Kredensial diverifikasi backend lewat `POST /api/auth/login`; setelah
+ * berhasil, pengguna diarahkan sesuai peran yang dikembalikan server.
  */
 export default function LoginPage() {
   const { login, isAuthenticated, user } = useAuth();
@@ -41,23 +40,12 @@ export default function LoginPage() {
     const result = await login(email, password);
     setSubmitting(false);
 
-    if (!result.ok) {
+    if (!result.ok || !result.user) {
       setError(result.error ?? 'Gagal masuk.');
       return;
     }
-    // Peran ditentukan dari akun yang cocok; ambil ulang dari daftar demo.
-    const account = mockAccounts.find(
-      (a) => a.email.toLowerCase() === email.trim().toLowerCase(),
-    );
-    const fallback = account ? landingPathFor(account.role) : '/dasbor';
-    navigate(from ?? fallback, { replace: true });
-  };
-
-  /** Isi cepat kredensial demo. */
-  const fillDemo = (demoEmail: string, demoPassword: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPassword);
-    setError(null);
+    // Peran datang dari server (klaim di dalam JWT), bukan tebakan klien.
+    navigate(from ?? landingPathFor(result.user.role), { replace: true });
   };
 
   return (
@@ -140,33 +128,6 @@ export default function LoginPage() {
           </Link>
         </p>
 
-        {/* Akun demo — memudahkan mencoba tiap peran pada fase frontend. */}
-        <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-white/60 p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Akun demo
-          </p>
-          <ul className="mt-2 space-y-1.5">
-            {mockAccounts.map((account) => (
-              <li key={account.id}>
-                <button
-                  type="button"
-                  onClick={() => fillDemo(account.email, account.password)}
-                  className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition hover:bg-slate-100"
-                >
-                  <span className="min-w-0">
-                    <span className="font-medium text-slate-700">
-                      {ROLE_LABEL[account.role]}
-                    </span>
-                    <span className="ml-2 truncate text-slate-400">{account.email}</span>
-                  </span>
-                  <span className="shrink-0 text-xs font-semibold text-brand-600">
-                    Isi
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
       </div>
     </div>
   );

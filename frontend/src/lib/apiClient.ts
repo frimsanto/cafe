@@ -61,6 +61,40 @@ export function readAuthToken(): string | null {
   }
 }
 
+/** Simpan JWT hasil login. Dipanggil hanya oleh `AuthProvider`. */
+export function writeAuthToken(token: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } catch {
+    /* storage tidak tersedia — token hanya bertahan di memori proses ini */
+  }
+}
+
+/** Hapus JWT (logout atau token kedaluwarsa). */
+export function clearAuthToken(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch {
+    /* abaikan */
+  }
+}
+
+/**
+ * Penanganan token kedaluwarsa. Backend tidak punya endpoint `/auth/me`, jadi
+ * satu-satunya cara tahu sebuah token sudah tidak sah adalah ketika API
+ * membalas 401. `AuthProvider` mendaftarkan callback di sini supaya sesi
+ * langsung dibersihkan dan pengguna diarahkan ke halaman masuk — tanpa itu,
+ * layar akan menampilkan error berulang dengan sesi yang sudah mati.
+ */
+type UnauthorizedHandler = () => void;
+let onUnauthorized: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
+  onUnauthorized = handler;
+}
+
 /**
  * Pemanggil API backend: menempelkan base URL + token, lalu membongkar
  * amplop respons `{ data }` / `{ error }` yang dipakai seluruh endpoint.
@@ -90,6 +124,14 @@ export async function apiFetch<T>(
   const body = isJson ? await response.json() : null;
 
   if (!response.ok) {
+    // 401 hanya berarti "sesi mati" bila kita memang mengirim token. Login
+    // dengan kata sandi salah juga membalas 401, dan itu tidak boleh memicu
+    // pembersihan sesi (belum ada sesi yang perlu dibersihkan).
+    if (response.status === 401 && token) {
+      clearAuthToken();
+      onUnauthorized?.();
+    }
+
     const message =
       (body && typeof body.error === 'string' && body.error) ||
       `Permintaan gagal (${response.status})`;

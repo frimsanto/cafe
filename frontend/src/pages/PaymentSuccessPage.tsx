@@ -5,7 +5,7 @@ import { getLastOrder } from '../order/orderStore';
 import { formatRupiah } from '../lib/format';
 import { downloadReceiptPdf } from '../lib/receipt';
 import { subscribeToOrderPush, type SubscribeResult } from '../lib/push';
-import { mockCafe } from '../data/mockMenu';
+import { useTableSession } from '../table/TableSessionContext';
 import { paymentMethods } from '../data/paymentMethods';
 import OrderStatusStepper from '../components/order/OrderStatusStepper';
 
@@ -32,10 +32,12 @@ function formatWaktu(iso: string): string {
  * Menegaskan pembayaran berhasil, memberi tahu bahwa pesanan sudah dikirim ke
  * dapur, menampilkan progres status pesanan, dan merinci isi pesanan.
  *
- * Struk PDF (tombol unduh) adalah task berikutnya di page ini.
+ * Pesanan yang ditampilkan adalah pesanan versi server yang disimpan saat
+ * checkout, jadi nomor pesanan & id transaksinya sama dengan catatan kafe.
  */
 export default function PaymentSuccessPage() {
   const navigate = useNavigate();
+  const { table } = useTableSession();
   const [order, setOrder] = useState<Order | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
@@ -53,9 +55,10 @@ export default function PaymentSuccessPage() {
 
   if (!order) return null;
 
-  const methodName =
-    paymentMethods.find((m) => m.code === order.payment.method)?.name ??
-    order.payment.method;
+  const methodName = order.payment
+    ? (paymentMethods.find((m) => m.code === order.payment!.method)?.name ??
+      order.payment.method)
+    : '-';
 
   const handleEnablePush = async () => {
     if (pushLoading || !order) return;
@@ -70,7 +73,11 @@ export default function PaymentSuccessPage() {
     if (downloading) return;
     setDownloading(true);
     try {
-      await downloadReceiptPdf(order, mockCafe);
+      await downloadReceiptPdf(order, {
+        id: order.cafeId,
+        name: table?.cafeName ?? 'CafeOS',
+        tagline: '',
+      });
     } catch (err) {
       console.error('Gagal membuat struk PDF', err);
       alert('Maaf, struk gagal dibuat. Silakan coba lagi.');

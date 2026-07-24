@@ -4,6 +4,24 @@
 /** Periode yang bisa dipilih pemilik pada metrik omzet. */
 export type RevenuePeriod = 'today' | 'week' | 'month';
 
+/** Label pemilih periode. Konfigurasi tampilan, bukan data — selalu statis. */
+export const REVENUE_PERIODS: {
+  key: RevenuePeriod;
+  label: string;
+  caption: string;
+}[] = [
+  { key: 'today', label: 'Hari Ini', caption: 'Omzet hari ini' },
+  { key: 'week', label: 'Minggu Ini', caption: 'Akumulasi 7 hari berjalan' },
+  { key: 'month', label: 'Bulan Ini', caption: 'Akumulasi bulan berjalan' },
+];
+
+/** Keterangan pembanding yang ditampilkan di samping angka pertumbuhan. */
+export const PERIOD_COMPARISON_LABEL: Record<RevenuePeriod, string> = {
+  today: 'vs kemarin',
+  week: 'vs minggu lalu',
+  month: 'vs bulan lalu',
+};
+
 export interface RevenueSummary {
   /** Total omzet hari ini (Rupiah). */
   today: number;

@@ -1,13 +1,13 @@
-import type { Order } from '../../types/order';
+import type { CashierOrderDTO } from '../../types/api';
 import { formatRupiah } from '../../lib/format';
 import { elapsedLabel, elapsedMinutes } from '../../lib/time';
 
 interface PendingOrderCardProps {
-  order: Order;
+  order: CashierOrderDTO;
   /** Menit tunggu sejak pesanan dibuat — untuk menandai antrean yang menua. */
   now: number;
   /** Buka dialog pembayaran untuk pesanan ini. */
-  onPay: (order: Order) => void;
+  onPay: (order: CashierOrderDTO) => void;
 }
 
 /** Batas menit sebelum pesanan disorot sebagai "menunggu terlalu lama". */

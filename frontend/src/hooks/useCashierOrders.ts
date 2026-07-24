@@ -1,66 +1,99 @@
-import { useCallback, useMemo, useState } from 'react';
-import type { Order, PaymentMethodCode } from '../types/order';
-import { mockCashierOrders } from '../data/mockCashierOrders';
-import { releaseToKitchen } from '../order/kitchenQueue';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { PaymentMethodCode } from '../types/order';
+import type { CashierOrderDTO } from '../types/api';
+import { cashierApi } from '../api/orders';
+import { describeApiError } from '../lib/apiClient';
+import { subscribeRealtime } from '../lib/realtime';
 
 export interface CashierOrders {
   /** Pesanan yang menunggu pembayaran, terlama di urutan pertama (FIFO). */
-  pending: Order[];
+  pending: CashierOrderDTO[];
   /** Jumlah rupiah seluruh pesanan yang masih menunggu. */
   totalPending: number;
+  loading: boolean;
+  error: string | null;
+  reload: () => void;
   /**
-   * Tandai satu pesanan lunas: pesanan keluar dari antrean kasir, pembayarannya
-   * tercatat SUCCESS, dan pesanan dirilis ke Layar Dapur. Mengembalikan pesanan
-   * versi terbayar (untuk struk & notifikasi), atau `null` bila id tak ditemukan.
+   * Tandai satu pesanan lunas lewat API kasir. Backend yang mencatat
+   * pembayaran, memindahkan pesanan ke DIPROSES_DAPUR, dan menyiarkannya ke
+   * Layar Dapur — klien tidak lagi merilis sendiri. Mengembalikan pesanan
+   * versi terbayar untuk struk & notifikasi.
    */
-  markPaid: (orderId: string, method: PaymentMethodCode) => Order | null;
+  markPaid: (orderId: string, method: PaymentMethodCode) => Promise<CashierOrderDTO>;
 }
 
 /**
  * Antrean pembayaran kasir untuk kafe yang sedang masuk.
  *
- * Fase frontend: sumbernya data tiruan `mockCashierOrders`. Fase backend akan
- * menggantinya dengan GET pesanan berstatus MENUNGGU_PEMBAYARAN + WebSocket.
+ * Isolasi tenant ditegakkan backend lewat token; daftar yang dikembalikan
+ * sudah hanya berisi pesanan kafe pengguna. Antrean ikut diperbarui realtime
+ * agar kasir kedua tidak menagih pesanan yang baru saja dibayar di kasir lain.
  */
 export function useCashierOrders(cafeId: string): CashierOrders {
-  const [orders, setOrders] = useState<Order[]>(() =>
-    // Isolasi tenant: hanya pesanan kafe pengguna yang tampil.
-    mockCashierOrders.filter((order) => order.cafeId === cafeId),
-  );
+  const [orders, setOrders] = useState<CashierOrderDTO[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const reload = useCallback(() => setReloadKey((key) => key + 1), []);
+
+  useEffect(() => {
+    if (!cafeId) return;
+    let cancelled = false;
+    setLoading(true);
+
+    cashierApi
+      .listPendingOrders(cafeId)
+      .then((data) => {
+        if (cancelled) return;
+        setOrders(data);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setOrders([]);
+        setError(describeApiError(err, 'Gagal memuat antrean kasir.'));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cafeId, reloadKey]);
+
+  // Pesanan baru masuk antrean, atau pesanan dibayar dari perangkat lain.
+  useEffect(() => {
+    if (!cafeId) return;
+    return subscribeRealtime(cafeId, (message) => {
+      if (
+        message.type === 'kitchen.order.created' ||
+        message.type === 'table.status.changed'
+      ) {
+        reload();
+      }
+    });
+  }, [cafeId, reload]);
 
   const pending = useMemo(
     () =>
-      [...orders].sort(
-        (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
-      ),
+      [...orders].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)),
     [orders],
   );
 
   const totalPending = pending.reduce((sum, order) => sum + order.totalAmount, 0);
 
   const markPaid = useCallback(
-    (orderId: string, method: PaymentMethodCode): Order | null => {
-      const found = orders.find((order) => order.id === orderId);
-      if (!found) return null;
-
-      const paid: Order = {
-        ...found,
-        // Pesanan baru boleh masuk dapur setelah pembayaran dikonfirmasi.
-        status: 'DIPROSES_DAPUR',
-        payment: {
-          method,
-          status: 'SUCCESS',
-          transactionId: `TRX-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-        },
-      };
-
+    async (orderId: string, method: PaymentMethodCode): Promise<CashierOrderDTO> => {
+      const paid = await cashierApi.confirmPayment(cafeId, orderId, method);
+      // Keluarkan dari antrean seketika; siaran realtime menyusul untuk
+      // perangkat lain.
       setOrders((prev) => prev.filter((order) => order.id !== orderId));
-      // Pembayaran dikonfirmasi → pesanan baru boleh tampil di Layar Dapur.
-      releaseToKitchen(paid);
       return paid;
     },
-    [orders],
+    [cafeId],
   );
 
-  return { pending, totalPending, markPaid };
+  return { pending, totalPending, loading, error, reload, markPaid };
 }

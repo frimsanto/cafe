@@ -10,8 +10,10 @@ interface ReceiptPreviewProps {
 }
 
 function methodLabel(order: Order): string {
+  const method = order.payment?.method;
+  if (!method) return '-';
   const all = [...paymentMethods, ...cashierPaymentMethods];
-  return all.find((m) => m.code === order.payment.method)?.name ?? order.payment.method;
+  return all.find((m) => m.code === method)?.name ?? method;
 }
 
 function formatWaktu(iso: string): string {
@@ -119,12 +121,16 @@ export default function ReceiptPreview({
         <div className="flex justify-between gap-2">
           <dt>Status</dt>
           <dd className="text-right font-semibold">
-            {order.payment.status === 'SUCCESS' ? 'LUNAS' : order.payment.status}
+            {order.payment
+              ? order.payment.status === 'SUCCESS'
+                ? 'LUNAS'
+                : order.payment.status
+              : 'BELUM DIBAYAR'}
           </dd>
         </div>
         <div className="flex justify-between gap-2">
           <dt>ID Transaksi</dt>
-          <dd className="text-right">{order.payment.transactionId}</dd>
+          <dd className="text-right">{order.payment?.transactionId ?? '-'}</dd>
         </div>
       </dl>
 

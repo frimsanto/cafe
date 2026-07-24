@@ -33,7 +33,7 @@ export interface MenuCategoryWithItems extends MenuCategory {
   items: MenuItem[];
 }
 
-/** Info kafe & meja yang berasal dari QR code (mock untuk fase frontend). */
+/** Info kafe & meja hasil terjemahan QR code (`GET /api/tables/by-qr/:qrCode`). */
 export interface CafeInfo {
   id: string;
   name: string;

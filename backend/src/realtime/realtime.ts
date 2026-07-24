@@ -1,6 +1,6 @@
 import type { IncomingMessage, Server } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
-import type { OrderDTO } from '../dto/order.dto';
+import type { OrderDTO, OrderWithTableDTO } from '../dto/order.dto';
 
 // Mekanisme realtime berbasis WebSocket native (library `ws`) — bukan Socket.io
 // / Supabase. Klien (Layar Dapur, HP pelanggan) berlangganan channel per kafe
@@ -95,12 +95,12 @@ class Realtime {
   }
 
   /** Pesanan baru masuk ke dapur (setelah pembayaran sukses). */
-  emitKitchenOrderCreated(cafeId: string, order: OrderDTO): void {
+  emitKitchenOrderCreated(cafeId: string, order: OrderWithTableDTO): void {
     this.broadcastToCafe(cafeId, { type: 'kitchen.order.created', data: order });
   }
 
   /** Pesanan diperbarui (mis. status masak item berubah). */
-  emitKitchenOrderUpdated(cafeId: string, order: OrderDTO): void {
+  emitKitchenOrderUpdated(cafeId: string, order: OrderWithTableDTO): void {
     this.broadcastToCafe(cafeId, { type: 'kitchen.order.updated', data: order });
   }
 

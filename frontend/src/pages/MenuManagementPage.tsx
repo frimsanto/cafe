@@ -119,12 +119,12 @@ export default function MenuManagementPage() {
     return () => clearTimeout(timer);
   }, [savedItem]);
 
-  const handleSubmitItem = (values: MenuItemInput) => {
+  const handleSubmitItem = async (values: MenuItemInput) => {
     if (form === 'add') {
-      const created = addItem(values);
+      const created = await addItem(values);
       setSavedItem({ id: created.id, action: 'added' });
     } else if (form) {
-      updateItem(form.id, values);
+      await updateItem(form.id, values);
       setSavedItem({ id: form.id, action: 'updated' });
     }
 
@@ -135,9 +135,9 @@ export default function MenuManagementPage() {
     setActiveCategoryId(ALL_CATEGORIES);
   };
 
-  const handleMoveItem = (categoryId: string) => {
+  const handleMoveItem = async (categoryId: string) => {
     if (!movingItem) return;
-    moveItem(movingItem.id, categoryId);
+    await moveItem(movingItem.id, categoryId);
     setSavedItem({ id: movingItem.id, action: 'moved' });
     setMovingItem(null);
     // Item pindah kategori — jangan sampai hilang di balik penyaring lama.
@@ -145,8 +145,8 @@ export default function MenuManagementPage() {
     setActiveCategoryId(ALL_CATEGORIES);
   };
 
-  const handleToggleAvailability = (item: MenuItem) => {
-    const nowAvailable = toggleItemAvailability(item.id);
+  const handleToggleAvailability = async (item: MenuItem) => {
+    const nowAvailable = await toggleItemAvailability(item.id);
     setSavedItem({ id: item.id, action: nowAvailable ? 'shown' : 'hidden' });
   };
 

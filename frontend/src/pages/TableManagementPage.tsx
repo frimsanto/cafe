@@ -3,9 +3,6 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import type { CafeTable } from '../types/table';
 import { useTableManager } from '../hooks/useTableManager';
-import { mockCashierOrders } from '../data/mockCashierOrders';
-import { mockKitchenOrders } from '../data/mockKitchenOrders';
-import { occupiedTableIds, tableStatusOf } from '../lib/tableStatus';
 import { describeApiError } from '../lib/apiClient';
 import AppLayout from '../components/layout/AppLayout';
 import AlertBanner from '../components/common/AlertBanner';
@@ -26,8 +23,7 @@ export default function TableManagementPage() {
   const {
     tables,
     loading,
-    source,
-    apiError,
+    error: loadError,
     reload,
     addTable,
     renameTable,
@@ -42,13 +38,12 @@ export default function TableManagementPage() {
   /** Meja yang QR-nya sedang dilihat. */
   const [qrTable, setQrTable] = useState<CafeTable | null>(null);
 
-  // Status meja diturunkan dari pesanan yang masih berjalan: menunggu bayar di
-  // kasir + sedang diproses dapur. Fase backend akan mengambilnya dari API/WS.
-  const occupied = useMemo(
-    () => occupiedTableIds([...mockCashierOrders, ...mockKitchenOrders]),
-    [],
+  // Status pemakaian dihitung backend dari pesanan yang masih berjalan, jadi
+  // tinggal dibaca dari tiap meja — tidak perlu diturunkan ulang di klien.
+  const inUseCount = useMemo(
+    () => tables.filter((table) => table.status === 'DIGUNAKAN').length,
+    [tables],
   );
-  const inUseCount = tables.filter((table) => occupied.has(table.id)).length;
   /** Pesan hasil tindakan terakhir; `highlightId` menyorot kartu terkait. */
   const [notice, setNotice] = useState<{
     text: string;
@@ -91,13 +86,10 @@ export default function TableManagementPage() {
    */
   const handleAddTable = async (tableName: string): Promise<string | null> => {
     try {
-      const created = await addTable(tableName);
+      await addTable(tableName);
       setFormOpen(false);
       setErrorText(null);
-      setNotice({
-        text: `${created.tableName} berhasil ditambahkan dengan token QR ${created.qrCode}.`,
-        highlightId: created.id,
-      });
+      setNotice({ text: `${tableName.trim()} berhasil ditambahkan.` });
       return null;
     } catch (error) {
       return describeApiError(error, 'Meja gagal ditambahkan.');
@@ -143,15 +135,14 @@ export default function TableManagementPage() {
       }
     >
       <div className="space-y-5">
-        {/* Berterus terang saat data bukan dari server */}
-        {!loading && source === 'mock' && (
+        {/* Gagal memuat dari server — tampilkan apa adanya, jangan mengarang data */}
+        {!loading && loadError && (
           <AlertBanner
-            tone="warning"
-            title="Menampilkan data contoh"
+            tone="error"
+            title="Gagal memuat daftar meja"
             action={{ label: 'Coba lagi', onClick: reload }}
           >
-            Belum tersambung ke API meja{apiError ? ` — ${apiError}` : ''}.
-            Perubahan di halaman ini belum tersimpan ke server.
+            {loadError}
           </AlertBanner>
         )}
 
@@ -218,7 +209,7 @@ export default function TableManagementPage() {
                 <TableCard
                   key={table.id}
                   table={table}
-                  status={tableStatusOf(table.id, occupied)}
+                  status={table.status}
                   highlighted={table.id === notice?.highlightId}
                   onRename={handleRename}
                   onDelete={setDeletingTable}

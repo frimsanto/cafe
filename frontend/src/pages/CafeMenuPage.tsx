@@ -1,7 +1,9 @@
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { getMenuByCategoryForCafe } from '../data/mockMenu';
+import type { MenuCategoryWithItems } from '../types/menu';
+import { menuApi } from '../api/menu';
+import { describeApiError } from '../lib/apiClient';
 import { formatRupiah } from '../lib/format';
 import AppLayout from '../components/layout/AppLayout';
 import MenuItemImage from '../components/menu/MenuItemImage';
@@ -13,15 +15,41 @@ import MenuItemImage from '../components/menu/MenuItemImage';
  * pengguna, sehingga satu kafe tidak pernah melihat menu kafe lain. Kafe yang
  * baru mendaftar akan melihat daftar kosong.
  *
- * Fase ini masih baca-saja; tambah/ubah menu ada di fitur Manajemen Menu.
+ * Halaman ini baca-saja; tambah/ubah menu ada di fitur Manajemen Menu.
  */
 export default function CafeMenuPage() {
   const { user } = useAuth();
 
-  const categories = useMemo(
-    () => (user ? getMenuByCategoryForCafe(user.cafeId) : []),
-    [user],
-  );
+  const cafeId = user?.cafeId;
+  const [categories, setCategories] = useState<MenuCategoryWithItems[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!cafeId) return;
+    let cancelled = false;
+    setLoading(true);
+
+    menuApi
+      .grouped(cafeId)
+      .then((data) => {
+        if (cancelled) return;
+        setCategories(data);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setCategories([]);
+        setError(describeApiError(err, 'Gagal memuat menu kafe.'));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cafeId]);
 
   if (!user) return <Navigate to="/login" replace />;
 
@@ -55,7 +83,27 @@ export default function CafeMenuPage() {
         </div>
       </div>
 
-      {totalItems === 0 ? (
+      {error && (
+        <p
+          role="alert"
+          className="mb-5 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700"
+        >
+          {error}
+        </p>
+      )}
+
+      {loading ? (
+        <div role="status" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <span className="sr-only">Memuat menu kafe…</span>
+          {Array.from({ length: 6 }, (_, index) => (
+            <div
+              key={index}
+              aria-hidden
+              className="h-24 animate-pulse rounded-2xl bg-white/70 ring-1 ring-slate-200"
+            />
+          ))}
+        </div>
+      ) : totalItems === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-20 text-center">
           <span className="text-4xl">🍽️</span>
           <h2 className="mt-3 text-lg font-semibold text-slate-700">

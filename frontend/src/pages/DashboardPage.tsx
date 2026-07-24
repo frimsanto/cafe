@@ -1,5 +1,9 @@
-import { useState } from 'react';
-import { growthPercent, mockDashboardSummary } from '../data/mockDashboard';
+import { useCallback, useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
+import { dashboardApi } from '../api/dashboard';
+import { kitchenApi } from '../api/orders';
+import { subscribeRealtime } from '../lib/realtime';
 import { useDashboardPrefs } from '../hooks/useDashboardPrefs';
 import AppLayout from '../components/layout/AppLayout';
 import StatCard from '../components/dashboard/StatCard';
@@ -16,16 +20,82 @@ function todayLabel(): string {
   });
 }
 
+/** Angka KPI ringkas di kartu atas dasbor. */
+interface OrderStats {
+  ordersToday: number;
+  ordersYesterday: number;
+  activeOrders: number;
+}
+
+/**
+ * Persentase perubahan terhadap pembanding. `null` bila pembandingnya nol —
+ * tidak ada dasar perbandingan yang bermakna.
+ */
+function growthPercent(current: number, previous: number): number | null {
+  if (previous === 0) return null;
+  return ((current - previous) / previous) * 100;
+}
+
 /**
  * Dasbor pemilik — halaman utama pemantauan kafe.
  *
- * Widget yang tampil dapat disesuaikan pemilik lewat panel kustomisasi;
- * pilihannya disimpan di localStorage. Seluruh angka masih data tiruan.
+ * Widget yang tampil dapat disesuaikan pemilik lewat panel kustomisasi.
+ * Jumlah pesanan hari ini & pembandingnya diambil dari ringkasan omzet
+ * (`orderCount` + `previous.orderCount`), sedangkan "sedang diproses" dihitung
+ * dari antrean dapur — backend tidak punya endpoint khusus untuk angka itu.
  */
 export default function DashboardPage() {
-  const { orders } = mockDashboardSummary;
-  const { prefs, visibleCount, totalCount, setWidget, reset } = useDashboardPrefs();
+  const { user } = useAuth();
+  const cafeId = user?.cafeId ?? '';
+  const { prefs, visibleCount, totalCount, setWidget, reset } =
+    useDashboardPrefs(cafeId);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [orders, setOrders] = useState<OrderStats>({
+    ordersToday: 0,
+    ordersYesterday: 0,
+    activeOrders: 0,
+  });
+
+  const loadStats = useCallback(async () => {
+    if (!cafeId) return;
+    // Kedua angka berdiri sendiri: kegagalan salah satu tidak boleh
+    // mengosongkan yang lain, jadi hasilnya diperiksa satu per satu.
+    const [revenue, active] = await Promise.allSettled([
+      dashboardApi.revenue(cafeId, 'today'),
+      kitchenApi.listActiveOrders(cafeId),
+    ]);
+
+    setOrders((prev) => ({
+      ordersToday:
+        revenue.status === 'fulfilled' ? revenue.value.orderCount : prev.ordersToday,
+      ordersYesterday:
+        revenue.status === 'fulfilled'
+          ? revenue.value.previous.orderCount
+          : prev.ordersYesterday,
+      activeOrders:
+        active.status === 'fulfilled' ? active.value.length : prev.activeOrders,
+    }));
+  }, [cafeId]);
+
+  useEffect(() => {
+    void loadStats();
+  }, [loadStats]);
+
+  // Perbarui KPI saat ada pesanan dibayar atau status dapur berubah.
+  useEffect(() => {
+    if (!cafeId) return;
+    return subscribeRealtime(cafeId, (message) => {
+      if (
+        message.type === 'dashboard.order.paid' ||
+        message.type === 'kitchen.order.created' ||
+        message.type === 'kitchen.order.updated'
+      ) {
+        void loadStats();
+      }
+    });
+  }, [cafeId, loadStats]);
+
+  if (!user) return <Navigate to="/login" replace />;
 
   const anyVisible = visibleCount > 0;
 
@@ -52,7 +122,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {prefs.revenue && (
             <div className="sm:col-span-2">
-              <RevenuePanel />
+              <RevenuePanel cafeId={cafeId} />
             </div>
           )}
 
@@ -89,7 +159,7 @@ export default function DashboardPage() {
 
           {prefs.topMenu && (
             <div className="sm:col-span-2 xl:col-span-1">
-              <TopMenuList />
+              <TopMenuList cafeId={cafeId} />
             </div>
           )}
         </div>

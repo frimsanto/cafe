@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma';
 import { ApiError } from '../lib/ApiError';
-import { toOrderDTO, type OrderDTO } from '../dto/order.dto';
+import { toOrderWithTableDTO, type OrderWithTableDTO } from '../dto/order.dto';
 import { realtime } from '../realtime/realtime';
 import { pushService } from './push.service';
 import { tableService } from './table.service';
@@ -15,13 +15,13 @@ export const kitchenService = {
    * mewakili "sudah dibayar dan belum selesai". Diurutkan FIFO (paling lama di
    * atas) agar dapur mengerjakan sesuai antrean.
    */
-  async getActiveOrders(cafeId: string): Promise<OrderDTO[]> {
+  async getActiveOrders(cafeId: string): Promise<OrderWithTableDTO[]> {
     const orders = await prisma.order.findMany({
       where: { cafeId, status: 'DIPROSES_DAPUR' },
-      include: { items: true, payment: true },
+      include: { items: true, payment: true, table: { select: { tableName: true } } },
       orderBy: { createdAt: 'asc' },
     });
-    return orders.map(toOrderDTO);
+    return orders.map(toOrderWithTableDTO);
   },
 
   /**
@@ -34,7 +34,7 @@ export const kitchenService = {
     cafeId: string,
     itemId: string,
     status: KitchenStatus,
-  ): Promise<OrderDTO> {
+  ): Promise<OrderWithTableDTO> {
     // Pastikan item ada & pesanannya milik kafe ini (isolasi tenant).
     const item = await prisma.orderItem.findFirst({
       where: { id: itemId, order: { cafeId } },
@@ -51,7 +51,7 @@ export const kitchenService = {
 
     let order = await prisma.order.findUniqueOrThrow({
       where: { id: item.orderId },
-      include: { items: true, payment: true },
+      include: { items: true, payment: true, table: { select: { tableName: true } } },
     });
 
     // Pengecekan otomatis: bila SELURUH item sudah READY dan pesanan belum
@@ -66,11 +66,11 @@ export const kitchenService = {
       order = await prisma.order.update({
         where: { id: order.id },
         data: { status: 'SELESAI' },
-        include: { items: true, payment: true },
+        include: { items: true, payment: true, table: { select: { tableName: true } } },
       });
     }
 
-    const dto = toOrderDTO(order);
+    const dto = toOrderWithTableDTO(order);
     realtime.emitKitchenOrderUpdated(cafeId, dto);
     if (becameReady) {
       realtime.emitOrderReady(cafeId, dto); // notifikasi in-app (WebSocket)

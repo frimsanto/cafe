@@ -1,22 +1,17 @@
-import type { Order, OrderItem, Payment, Table } from '@prisma/client';
-import { toOrderDTO, type OrderDTO } from './order.dto';
+import {
+  toOrderWithTableDTO,
+  type OrderWithTable,
+  type OrderWithTableDTO,
+} from './order.dto';
 
 /**
  * Pesanan untuk layar kasir — sama dengan `OrderDTO` plus nama meja.
  *
- * Kasir memanggil tamu dengan nama mejanya ("Meja 12"), bukan id; menyertakan
- * namanya di sini menghemat satu pemanggilan tambahan dari klien.
+ * Bentuknya kini dipakai bersama Layar Dapur, jadi definisinya tinggal di
+ * `order.dto.ts`; nama `CashierOrderDTO` dipertahankan agar kode kasir yang
+ * sudah ada tidak perlu ikut berubah.
  */
-export interface CashierOrderDTO extends OrderDTO {
-  tableName: string;
-}
+export type CashierOrderDTO = OrderWithTableDTO;
 
-type OrderWithTable = Order & {
-  items: OrderItem[];
-  payment: Payment | null;
-  table: Pick<Table, 'tableName'>;
-};
-
-export function toCashierOrderDTO(order: OrderWithTable): CashierOrderDTO {
-  return { ...toOrderDTO(order), tableName: order.table.tableName };
-}
+export const toCashierOrderDTO = toOrderWithTableDTO;
+export type { OrderWithTable };

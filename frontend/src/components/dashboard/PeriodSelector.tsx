@@ -1,5 +1,4 @@
-import type { RevenuePeriod } from '../../types/dashboard';
-import { REVENUE_PERIODS } from '../../data/mockDashboard';
+import { REVENUE_PERIODS, type RevenuePeriod } from '../../types/dashboard';
 
 interface PeriodSelectorProps {
   value: RevenuePeriod;

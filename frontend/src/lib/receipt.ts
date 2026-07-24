@@ -12,8 +12,10 @@ const LINE = 5; // tinggi baris standar
 
 function methodLabel(order: Order): string {
   // Metode bisa berasal dari pembayaran di meja maupun di kasir.
+  const method = order.payment?.method;
+  if (!method) return '-';
   const all = [...paymentMethods, ...cashierPaymentMethods];
-  return all.find((m) => m.code === order.payment.method)?.name ?? order.payment.method;
+  return all.find((m) => m.code === method)?.name ?? method;
 }
 
 function formatWaktu(iso: string): string {
@@ -32,8 +34,8 @@ function formatWaktu(iso: string): string {
  * jsPDF di-import dinamis agar tidak membebani bundle awal — pustaka hanya
  * dimuat saat pelanggan benar-benar mengunduh struk.
  *
- * Fase frontend: dibangun dari data order lokal (mock). Fase backend bisa
- * memindahkan pembuatan struk ke server bila diperlukan.
+ * Dibangun dari data order yang sudah diambil dari API. Struk versi server
+ * (PDF resmi) tersedia lewat `receiptsApi.downloadPdf` bila dibutuhkan.
  */
 export async function downloadReceiptPdf(order: Order, cafe: CafeInfo): Promise<void> {
   const { jsPDF } = await import('jspdf');
@@ -85,7 +87,7 @@ export async function downloadReceiptPdf(order: Order, cafe: CafeInfo): Promise<
 
   // Meta pesanan
   row('No. Pesanan', order.id, { size: 8 });
-  row('Meja', order.tableName, { size: 8 });
+  row('Meja', order.tableName ?? '-', { size: 8 });
   row('Waktu', formatWaktu(order.createdAt), { size: 8 });
   dashed();
 
@@ -123,10 +125,17 @@ export async function downloadReceiptPdf(order: Order, cafe: CafeInfo): Promise<
   row('TOTAL', formatRupiah(order.totalAmount), { bold: true, size: 11 });
   y += 1;
   row('Metode', methodLabel(order), { size: 8 });
-  row('Status', order.payment.status === 'SUCCESS' ? 'LUNAS' : order.payment.status, {
-    size: 8,
-  });
-  row('ID Transaksi', order.payment.transactionId, { size: 8 });
+  // Pesanan yang belum dibayar tidak punya blok payment sama sekali.
+  row(
+    'Status',
+    order.payment
+      ? order.payment.status === 'SUCCESS'
+        ? 'LUNAS'
+        : order.payment.status
+      : 'BELUM DIBAYAR',
+    { size: 8 },
+  );
+  row('ID Transaksi', order.payment?.transactionId ?? '-', { size: 8 });
   dashed();
 
   // Footer

@@ -2,19 +2,38 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
 import type { AuthUser } from '../types/auth';
-import { findAccount, mockAccounts } from '../data/mockUsers';
+import { authApi } from '../api/auth';
+import {
+  clearAuthToken,
+  describeApiError,
+  readAuthToken,
+  setUnauthorizedHandler,
+  writeAuthToken,
+} from '../lib/apiClient';
 
-const STORAGE_KEY = 'cafeos-auth-user';
-const FAKE_LATENCY_MS = 600;
+/**
+ * Profil pengguna disimpan berdampingan dengan token. Backend belum punya
+ * endpoint `/auth/me`, jadi tanpa salinan profil ini setiap muat ulang halaman
+ * akan kehilangan nama/peran/`cafeId` meski tokennya masih sah.
+ */
+const USER_STORAGE_KEY = 'cafeos-auth-user';
 
 interface LoginResult {
   ok: boolean;
   error?: string;
+  /**
+   * Pengguna yang baru masuk. Dikembalikan langsung karena `user` dari context
+   * masih bernilai lama pada saat pemanggil melanjutkan eksekusi (state React
+   * baru terlihat pada render berikutnya) — halaman masuk butuh peran ini
+   * seketika untuk menentukan tujuan pengalihan.
+   */
+  user?: AuthUser;
 }
 
 /** Data pendaftaran kafe baru (pemilik + data usaha). */
@@ -36,90 +55,109 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/**
+ * Pulihkan sesi dari localStorage. Profil hanya dianggap sah bila tokennya
+ * masih ada — menghapus token lewat devtools tidak boleh menyisakan pengguna
+ * yang "seolah masuk" padahal setiap panggilan API-nya akan ditolak.
+ */
 function readStoredUser(): AuthUser | null {
   if (typeof window === 'undefined') return null;
+  if (!readAuthToken()) return null;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(USER_STORAGE_KEY);
     return raw ? (JSON.parse(raw) as AuthUser) : null;
   } catch {
     return null;
   }
 }
 
+function persistUser(user: AuthUser): void {
+  try {
+    window.localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+  } catch {
+    /* storage tidak tersedia — sesi hanya bertahan di memori */
+  }
+}
+
 /**
- * State autentikasi tiruan untuk fase frontend: memverifikasi kredensial ke
- * daftar akun demo dan menyimpan sesi di localStorage.
- *
- * Fase backend akan menggantinya dengan panggilan API login + token.
+ * State autentikasi sungguhan: kredensial diverifikasi backend lewat
+ * `/api/auth/login`, dan JWT yang dikembalikan disimpan di localStorage
+ * (`cafeos-auth-token`) untuk ditempelkan `apiFetch` sebagai header
+ * `Authorization: Bearer <token>` pada setiap permintaan berikutnya.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(readStoredUser);
 
+  const logout = useCallback(() => {
+    setUser(null);
+    clearAuthToken();
+    try {
+      window.localStorage.removeItem(USER_STORAGE_KEY);
+    } catch {
+      /* abaikan */
+    }
+  }, []);
+
+  // Token kedaluwarsa di tengah pemakaian: `apiFetch` memanggil handler ini
+  // begitu ada balasan 401, sehingga sesi mati langsung dibersihkan.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      try {
+        window.localStorage.removeItem(USER_STORAGE_KEY);
+      } catch {
+        /* abaikan */
+      }
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
+
   const login = useCallback(
     async (email: string, password: string): Promise<LoginResult> => {
-      // Tiru jeda jaringan agar UI loading terasa nyata.
-      await new Promise((resolve) => setTimeout(resolve, FAKE_LATENCY_MS));
-
-      const found = findAccount(email, password);
-      if (!found) {
-        return { ok: false, error: 'Email atau kata sandi salah.' };
-      }
-
-      setUser(found);
       try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(found));
-      } catch {
-        /* storage tidak tersedia — sesi hanya bertahan di memori */
+        const session = await authApi.login(email.trim().toLowerCase(), password);
+        writeAuthToken(session.token);
+        persistUser(session.user);
+        setUser(session.user);
+        return { ok: true, user: session.user };
+      } catch (error) {
+        return {
+          ok: false,
+          error: describeApiError(error, 'Email atau kata sandi salah.'),
+        };
       }
-      return { ok: true };
     },
     [],
   );
 
   /**
-   * Daftarkan kafe baru. Setiap pendaftaran membuat `cafeId` baru — inilah
-   * pemisah tenant: data kafe ini tidak akan tercampur dengan kafe lain.
-   * Pendaftar otomatis menjadi OWNER dan langsung masuk.
+   * Daftarkan kafe baru. Backend membuat `cafeId` baru untuk setiap
+   * pendaftaran — inilah pemisah tenant — lalu menjadikan pendaftarnya OWNER
+   * dan langsung mengembalikan token, jadi tidak perlu login ulang.
    */
   const register = useCallback(
     async (input: RegisterInput): Promise<LoginResult> => {
-      await new Promise((resolve) => setTimeout(resolve, FAKE_LATENCY_MS));
-
-      const emailTaken = mockAccounts.some(
-        (a) => a.email.toLowerCase() === input.email.trim().toLowerCase(),
-      );
-      if (emailTaken) {
-        return { ok: false, error: 'Email ini sudah terdaftar. Coba masuk saja.' };
-      }
-
-      const newUser: AuthUser = {
-        id: `user-${Math.random().toString(36).slice(2, 10)}`,
-        name: input.ownerName.trim(),
-        email: input.email.trim().toLowerCase(),
-        role: 'OWNER',
-        cafeId: `cafe-${Math.random().toString(36).slice(2, 10)}`,
-        cafeName: input.cafeName.trim(),
-      };
-
-      setUser(newUser);
       try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
-      } catch {
-        /* storage tidak tersedia — sesi hanya bertahan di memori */
+        const session = await authApi.register({
+          cafeName: input.cafeName.trim(),
+          address: input.address.trim(),
+          ownerName: input.ownerName.trim(),
+          email: input.email.trim().toLowerCase(),
+          password: input.password,
+        });
+        writeAuthToken(session.token);
+        persistUser(session.user);
+        setUser(session.user);
+        return { ok: true, user: session.user };
+      } catch (error) {
+        return {
+          ok: false,
+          error: describeApiError(error, 'Pendaftaran gagal. Coba lagi.'),
+        };
       }
-      return { ok: true };
     },
     [],
   );
-
-  const logout = useCallback(() => {
-    setUser(null);
-    try {
-      window.localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      /* abaikan */
-    }
-  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({ user, isAuthenticated: user !== null, login, register, logout }),

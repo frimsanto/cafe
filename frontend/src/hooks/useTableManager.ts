@@ -1,22 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { CafeTable } from '../types/table';
-import { getTablesForCafe } from '../data/mockTables';
+import type { TableWithStatusDTO } from '../types/api';
 import { tablesApi } from '../api/tables';
 import { describeApiError } from '../lib/apiClient';
 
-/** Dari mana data meja yang sedang tampil berasal. */
-export type TableSource = 'api' | 'mock';
-
 export interface TableManager {
-  tables: CafeTable[];
+  tables: TableWithStatusDTO[];
   loading: boolean;
-  source: TableSource;
-  /** Alasan gagal memakai API — dipakai untuk memberi tahu pengguna. */
-  apiError: string | null;
+  /** Pesan kegagalan memuat/mengubah data — null bila semuanya lancar. */
+  error: string | null;
   /** Muat ulang dari API. */
   reload: () => void;
-  /** Tambah meja baru; token QR dibuat server (atau lokal saat mode contoh). */
-  addTable: (tableName: string) => Promise<CafeTable>;
+  /** Tambah meja baru; token QR dibuat server. */
+  addTable: (tableName: string) => Promise<void>;
   /** Ganti nama meja. Token QR tidak ikut berubah — stiker lama tetap sah. */
   renameTable: (id: string, tableName: string) => Promise<void>;
   /**
@@ -28,36 +23,23 @@ export interface TableManager {
   suggestNextName: () => string;
 }
 
-function randomSuffix(): string {
-  return Math.random().toString(36).slice(2, 8);
-}
-
-/** Meja "lokal" untuk mode data contoh — bentuknya sama dengan hasil API. */
-function makeLocalTable(cafeId: string, tableName: string): CafeTable {
-  const suffix = randomSuffix();
-  return {
-    id: `table-${suffix}`,
-    cafeId,
-    tableName: tableName.trim(),
-    qrCode: `mj-${suffix}-${cafeId.slice(-3)}`,
-  };
-}
-
 /**
- * Sumber data meja untuk halaman Manajemen Meja & QR.
+ * Sumber data meja untuk halaman Manajemen Meja & QR — seluruhnya dari API
+ * (`/api/cafes/:cafeId/tables`), disaring per `cafeId` di backend.
  *
- * Mengambil data dari API backend (`/api/cafes/:cafeId/tables`). Bila backend
- * belum tersedia — endpoint meja baru dibuat pada layer backend fase ini —
- * hook ini JATUH KE DATA CONTOH agar halaman tetap bisa dipakai dan diuji,
- * sambil menandai `source: 'mock'` supaya UI bisa berterus terang.
+ * Tidak ada lagi cadangan data contoh: kalau API gagal, halaman menampilkan
+ * pesan kesalahan. Menampilkan meja palsu saat backend mati justru berbahaya —
+ * pemilik bisa mengira punya belasan meja yang sebenarnya tidak ada, dan
+ * mencetak stiker QR yang tidak menunjuk ke mana pun.
  *
- * Semua perubahan disaring per `cafeId` (isolasi multi-tenant).
+ * Setiap perubahan memuat ulang daftar dari server, bukan menambal state
+ * lokal: status pemakaian meja (KOSONG/DIGUNAKAN) dihitung backend dari
+ * pesanan berjalan, jadi hanya server yang tahu nilai barunya.
  */
 export function useTableManager(cafeId: string): TableManager {
-  const [tables, setTables] = useState<CafeTable[]>([]);
+  const [tables, setTables] = useState<TableWithStatusDTO[]>([]);
   const [loading, setLoading] = useState(true);
-  const [source, setSource] = useState<TableSource>('api');
-  const [apiError, setApiError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -69,15 +51,12 @@ export function useTableManager(cafeId: string): TableManager {
       .then((data) => {
         if (cancelled) return;
         setTables(data);
-        setSource('api');
-        setApiError(null);
+        setError(null);
       })
-      .catch((error: unknown) => {
+      .catch((err: unknown) => {
         if (cancelled) return;
-        // Backend belum siap/tidak terjangkau — tampilkan data contoh apa adanya.
-        setTables(getTablesForCafe(cafeId));
-        setSource('mock');
-        setApiError(describeApiError(error, 'Gagal memuat daftar meja.'));
+        setTables([]);
+        setError(describeApiError(err, 'Gagal memuat daftar meja.'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -91,38 +70,27 @@ export function useTableManager(cafeId: string): TableManager {
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
 
   const addTable = useCallback(
-    async (tableName: string): Promise<CafeTable> => {
-      const table =
-        source === 'api'
-          ? await tablesApi.create(cafeId, tableName.trim())
-          : makeLocalTable(cafeId, tableName);
-
-      setTables((prev) => [...prev, table]);
-      return table;
+    async (tableName: string): Promise<void> => {
+      await tablesApi.create(cafeId, tableName.trim());
+      reload();
     },
-    [cafeId, source],
+    [cafeId, reload],
   );
 
   const renameTable = useCallback(
     async (id: string, tableName: string): Promise<void> => {
-      const trimmed = tableName.trim();
-      if (source === 'api') await tablesApi.rename(cafeId, id, trimmed);
-
-      setTables((prev) =>
-        prev.map((table) =>
-          table.id === id ? { ...table, tableName: trimmed } : table,
-        ),
-      );
+      await tablesApi.rename(cafeId, id, tableName.trim());
+      reload();
     },
-    [cafeId, source],
+    [cafeId, reload],
   );
 
   const removeTable = useCallback(
     async (id: string): Promise<void> => {
-      if (source === 'api') await tablesApi.remove(cafeId, id);
-      setTables((prev) => prev.filter((table) => table.id !== id));
+      await tablesApi.remove(cafeId, id);
+      reload();
     },
-    [cafeId, source],
+    [cafeId, reload],
   );
 
   const suggestNextName = useCallback((): string => {
@@ -137,8 +105,7 @@ export function useTableManager(cafeId: string): TableManager {
   return {
     tables,
     loading,
-    source,
-    apiError,
+    error,
     reload,
     addTable,
     renameTable,

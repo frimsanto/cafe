@@ -1,5 +1,8 @@
-import type { Order } from '../types/order';
 import type { TableStatus } from '../types/table';
+
+// Status pemakaian meja kini dihitung backend (diturunkan dari pesanan yang
+// masih berjalan) dan dikirim apa adanya pada tiap meja, jadi klien tidak
+// perlu lagi menurunkannya sendiri — yang tersisa hanya pemetaan tampilannya.
 
 interface TableStatusMeta {
   label: string;
@@ -21,23 +24,3 @@ export const TABLE_STATUS_META: Record<TableStatus, TableStatusMeta> = {
     dotClass: 'bg-emerald-500',
   },
 };
-
-/**
- * Meja dianggap DIGUNAKAN selama masih punya pesanan yang belum selesai —
- * baik yang menunggu dibayar di kasir maupun yang sedang dimasak dapur.
- * Status ini turunan, bukan kolom tersendiri di basis data.
- */
-export function occupiedTableIds(activeOrders: Order[]): Set<string> {
-  return new Set(
-    activeOrders
-      .filter((order) => order.status !== 'SELESAI')
-      .map((order) => order.tableId),
-  );
-}
-
-export function tableStatusOf(
-  tableId: string,
-  occupied: Set<string>,
-): TableStatus {
-  return occupied.has(tableId) ? 'DIGUNAKAN' : 'KOSONG';
-}

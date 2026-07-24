@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import type { Order, PaymentMethodCode } from '../types/order';
+import type { PaymentMethodCode } from '../types/order';
+import type { CashierOrderDTO } from '../types/api';
 import { useAuth } from '../auth/AuthContext';
 import { useCashierOrders } from '../hooks/useCashierOrders';
+import { describeApiError } from '../lib/apiClient';
 import { formatRupiah } from '../lib/format';
 import { downloadReceiptPdf } from '../lib/receipt';
 import AppLayout from '../components/layout/AppLayout';
@@ -27,23 +29,25 @@ const METHOD_LABEL: Partial<Record<PaymentMethodCode, string>> = {
  * dianggap dirilis ke dapur — menegakkan aturan "pesanan hanya masuk dapur
  * setelah pembayaran dikonfirmasi".
  *
- * Fase frontend: data & konfirmasi masih tiruan (belum memanggil API).
+ * Antrean & konfirmasi pembayaran seluruhnya lewat API kasir; daftarnya ikut
+ * diperbarui realtime agar dua kasir tidak menagih pesanan yang sama.
  */
 export default function CashierPage() {
   const { user } = useAuth();
-  const { pending, totalPending, markPaid } = useCashierOrders(user?.cafeId ?? '');
+  const { pending, totalPending, loading, error, reload, markPaid } =
+    useCashierOrders(user?.cafeId ?? '');
 
   const [query, setQuery] = useState('');
   /** Pesanan yang dialog pembayarannya sedang terbuka. */
-  const [payingOrder, setPayingOrder] = useState<Order | null>(null);
+  const [payingOrder, setPayingOrder] = useState<CashierOrderDTO | null>(null);
   /** Pembayaran yang baru berhasil — dasar notifikasi sukses & cetak struk. */
   const [paidResult, setPaidResult] = useState<{
-    order: Order;
+    order: CashierOrderDTO;
     cash: CashDetail | null;
   } | null>(null);
   /** Struk yang sedang dipratinjau untuk dicetak. */
   const [receipt, setReceipt] = useState<{
-    order: Order;
+    order: CashierOrderDTO;
     cash: CashDetail | null;
   } | null>(null);
   const [printing, setPrinting] = useState(false);
@@ -52,6 +56,8 @@ export default function CashierPage() {
     method: PaymentMethodCode;
   } | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
+  /** Kegagalan konfirmasi pembayaran — ditampilkan di dalam dialog. */
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   // Satu jam bersama untuk seluruh kartu — label "lama menunggu" ikut berdetak.
   const [now, setNow] = useState(() => Date.now());
@@ -78,17 +84,24 @@ export default function CashierPage() {
 
   if (!user) return <Navigate to="/login" replace />;
 
-  const handleConfirmPayment = (
+  const handleConfirmPayment = async (
     method: PaymentMethodCode,
     cash: CashDetail | null,
   ) => {
     if (!payingOrder) return;
-    const paid = markPaid(payingOrder.id, method);
-    setPayingOrder(null);
-    if (!paid) return;
-
-    setPaidResult({ order: paid, cash });
-    setConfirmation({ tableName: paid.tableName, method });
+    setPaymentError(null);
+    const target = payingOrder;
+    try {
+      // Backend yang mencatat pembayaran dan merilis pesanan ke dapur.
+      const paid = await markPaid(target.id, method);
+      setPayingOrder(null);
+      setPaidResult({ order: paid, cash });
+      setConfirmation({ tableName: paid.tableName, method });
+    } catch (error) {
+      // Modal dibiarkan terbuka agar kasir bisa langsung mencoba lagi tanpa
+      // kehilangan pilihan metode & nominal yang sudah diisi.
+      setPaymentError(describeApiError(error, 'Pembayaran gagal dikonfirmasi.'));
+    }
   };
 
   /**
@@ -118,6 +131,24 @@ export default function CashierPage() {
       subtitle={`${pending.length} pesanan menunggu · ${formatRupiah(totalPending)}`}
     >
       <div className="space-y-4">
+        {/* Gagal memuat antrean — jangan diam-diam tampil sebagai "tidak ada
+            pembayaran tertunda", karena artinya bertolak belakang. */}
+        {!loading && error && (
+          <AlertBanner
+            tone="error"
+            title="Gagal memuat antrean kasir"
+            action={{ label: 'Coba lagi', onClick: reload }}
+          >
+            {error}
+          </AlertBanner>
+        )}
+
+        {paymentError && (
+          <AlertBanner tone="error" onClose={() => setPaymentError(null)}>
+            {paymentError}
+          </AlertBanner>
+        )}
+
         {printError && (
           <AlertBanner tone="error" onClose={() => setPrintError(null)}>
             {printError}
@@ -151,7 +182,18 @@ export default function CashierPage() {
           </div>
         )}
 
-        {pending.length === 0 ? (
+        {loading ? (
+          <div role="status" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <span className="sr-only">Memuat antrean kasir…</span>
+            {Array.from({ length: 6 }, (_, index) => (
+              <div
+                key={index}
+                aria-hidden
+                className="h-40 animate-pulse rounded-2xl bg-white/70 ring-1 ring-slate-200"
+              />
+            ))}
+          </div>
+        ) : pending.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-20 text-center">
             <span className="text-4xl">💳</span>
             <h2 className="mt-3 text-lg font-semibold text-slate-700">

@@ -1,5 +1,6 @@
-// Tipe domain pesanan & pembayaran — mengikuti skema `orders`, `order_items`,
-// dan `payments` pada PRD. Dipakai lintas fitur (checkout, KDS, struk, dasbor).
+// Tipe domain pesanan & pembayaran. Bentuknya mengikuti respons backend
+// (`OrderDTO` di `backend/src/dto/order.dto.ts`) PERSIS, supaya data dari API
+// bisa dipakai apa adanya tanpa lapisan penerjemah yang gampang basi.
 
 export type OrderStatus =
   | 'MENUNGGU_PEMBAYARAN'
@@ -25,20 +26,30 @@ export interface OrderItem {
 }
 
 export interface Payment {
+  id: string;
+  orderId: string;
   method: PaymentMethodCode;
   status: PaymentStatus;
-  /** ID transaksi dari gateway (mock pada fase frontend). */
-  transactionId: string;
+  amount: number;
+  /** ID transaksi dari gateway; null bila belum/tidak diterbitkan. */
+  transactionId: string | null;
+  createdAt: string;
 }
 
 export interface Order {
   id: string;
   cafeId: string;
   tableId: string;
-  tableName: string;
+  /**
+   * Nama meja. Hanya dikirim endpoint kasir & dapur — layar merekalah yang
+   * memanggil tamu dengan nama meja. Endpoint lain tidak menyertakannya.
+   */
+  tableName?: string;
   status: OrderStatus;
   items: OrderItem[];
   totalAmount: number;
-  payment: Payment;
+  /** null selama pesanan belum dibayar. */
+  payment: Payment | null;
   createdAt: string;
+  updatedAt: string;
 }

@@ -36,9 +36,12 @@ export default function PaymentSuccessModal({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
-  const methodName =
-    cashierPaymentMethods.find((m) => m.code === order.payment.method)?.name ??
-    order.payment.method;
+  // Modal ini hanya muncul setelah pembayaran sukses, jadi `payment` praktis
+  // selalu terisi — tetap dijaga agar tipe nullable dari API dihormati.
+  const methodName = order.payment
+    ? (cashierPaymentMethods.find((m) => m.code === order.payment!.method)?.name ??
+      order.payment.method)
+    : '-';
 
   return (
     <div
@@ -64,7 +67,7 @@ export default function PaymentSuccessModal({
         </h2>
         <p className="text-sm text-slate-500">
           {order.tableName} · {methodName} ·{' '}
-          <span className="font-mono">{order.payment.transactionId}</span>
+          <span className="font-mono">{order.payment?.transactionId ?? '-'}</span>
         </p>
 
         <dl className="mt-4 space-y-2 rounded-2xl bg-slate-50 p-4 text-sm">

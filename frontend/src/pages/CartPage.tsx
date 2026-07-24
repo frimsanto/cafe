@@ -1,18 +1,18 @@
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../cart/CartContext';
 import { formatRupiah } from '../lib/format';
-import { mockTable } from '../data/mockMenu';
+import { useTableSession } from '../table/TableSessionContext';
 import CartLineCard from '../components/cart/CartLineCard';
 
 /**
  * Halaman keranjang: pelanggan meninjau item, mengubah jumlah, menambah catatan
  * khusus, dan menghapus item sebelum checkout.
  *
- * Fase frontend: tombol "Lanjut ke Pembayaran" masih stub — halaman pembayaran
- * di meja adalah task berikutnya di page ini.
+ * Identitas meja diambil dari sesi QR yang sama dengan halaman menu.
  */
 export default function CartPage() {
   const { lines, totalItems, totalAmount, clearCart } = useCart();
+  const { table } = useTableSession();
   const navigate = useNavigate();
   const isEmpty = lines.length === 0;
 
@@ -32,7 +32,7 @@ export default function CartPage() {
         </button>
         <div className="min-w-0 flex-1">
           <h1 className="text-lg font-bold text-slate-900">Keranjang</h1>
-          <p className="text-xs text-slate-500">{mockTable.tableName}</p>
+          <p className="text-xs text-slate-500">{table?.tableName ?? '-'}</p>
         </div>
         {!isEmpty && (
           <button

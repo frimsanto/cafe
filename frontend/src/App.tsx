@@ -1,6 +1,7 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { CartProvider } from './cart/CartContext';
 import { AuthProvider } from './auth/AuthContext';
+import { TableSessionProvider } from './table/TableSessionContext';
 import ProtectedRoute from './auth/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -16,11 +17,22 @@ import TableManagementPage from './pages/TableManagementPage';
 import CashierPage from './pages/CashierPage';
 
 /**
- * Routing aplikasi. Alur QR pelanggan mengarah ke `/menu/:tableId`
- * (mis. hasil scan QR meja). Keranjang bersifat global (CartProvider) sehingga
- * item tetap tersimpan saat berpindah antar halaman.
+ * Pembungkus halaman pelanggan: mengambil token QR dari URL lalu
+ * menerjemahkannya menjadi meja + kafe untuk seluruh halaman di bawahnya.
+ */
+function CustomerRoute({ children }: { children: React.ReactNode }) {
+  const { qrCode } = useParams();
+  return <TableSessionProvider qrCode={qrCode}>{children}</TableSessionProvider>;
+}
+
+/**
+ * Routing aplikasi. Alur QR pelanggan mengarah ke `/menu/:qrCode` — bentuk
+ * URL yang memang dienkode server ke stiker meja (lihat `backend/src/lib/
+ * qrUrl.ts`), sehingga tokennya bisa langsung diterjemahkan lewat
+ * `GET /api/tables/by-qr/:qrCode`.
  *
- * Fase frontend: `tableId` belum dipakai — data masih dari mock.
+ * Keranjang bersifat global (CartProvider) sehingga item tetap tersimpan saat
+ * berpindah antar halaman.
  */
 export default function App() {
   return (
@@ -31,11 +43,46 @@ export default function App() {
             <Route path="/" element={<Navigate to="/menu" replace />} />
 
             {/* Pelanggan (tanpa login — akses lewat QR meja) */}
-            <Route path="/menu" element={<MenuPage />} />
-            <Route path="/menu/:tableId" element={<MenuPage />} />
-            <Route path="/keranjang" element={<CartPage />} />
-            <Route path="/checkout" element={<CheckoutPage />} />
-            <Route path="/pesanan/sukses" element={<PaymentSuccessPage />} />
+            <Route
+              path="/menu"
+              element={
+                <CustomerRoute>
+                  <MenuPage />
+                </CustomerRoute>
+              }
+            />
+            <Route
+              path="/menu/:qrCode"
+              element={
+                <CustomerRoute>
+                  <MenuPage />
+                </CustomerRoute>
+              }
+            />
+            <Route
+              path="/keranjang"
+              element={
+                <CustomerRoute>
+                  <CartPage />
+                </CustomerRoute>
+              }
+            />
+            <Route
+              path="/checkout"
+              element={
+                <CustomerRoute>
+                  <CheckoutPage />
+                </CustomerRoute>
+              }
+            />
+            <Route
+              path="/pesanan/sukses"
+              element={
+                <CustomerRoute>
+                  <PaymentSuccessPage />
+                </CustomerRoute>
+              }
+            />
 
             {/* Staf & pemilik — dilindungi sesuai peran */}
             <Route path="/login" element={<LoginPage />} />

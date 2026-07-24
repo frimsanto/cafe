@@ -1,18 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { KitchenStatus } from '../types/order';
+import type { OrderWithTableDTO } from '../types/api';
 import { useAuth } from '../auth/AuthContext';
 import { ROLE_LABEL } from '../types/auth';
-import { mockCafe } from '../data/mockMenu';
-import {
-  generateRandomKitchenOrder,
-  mockKitchenOrders,
-} from '../data/mockKitchenOrders';
-import {
-  getKitchenQueue,
-  removeFromKitchenQueue,
-  subscribeKitchenQueue,
-} from '../order/kitchenQueue';
+import { kitchenApi } from '../api/orders';
+import { describeApiError } from '../lib/apiClient';
+import { subscribeRealtime } from '../lib/realtime';
 import { playChime, playReadyChime } from '../lib/sound';
 import KitchenOrderCard from '../components/kds/KitchenOrderCard';
 import ReadyToastContainer, {
@@ -20,10 +14,7 @@ import ReadyToastContainer, {
 } from '../components/kds/ReadyToast';
 
 const READY_TOAST_MS = 6000; // durasi toast "pesanan siap"
-
-const AUTO_INTERVAL_MS = 18000; // pesanan baru otomatis tiap ~18 detik
 const HIGHLIGHT_MS = 6000; // durasi sorotan "BARU"
-const MAX_ORDERS = 16; // batas jumlah tiket di layar
 
 /** True bila seluruh item pesanan sudah berstatus READY. */
 function isAllReady(order: { items: { kitchenStatus: KitchenStatus }[] }): boolean {
@@ -33,20 +24,23 @@ function isAllReady(order: { items: { kitchenStatus: KitchenStatus }[] }): boole
 /**
  * Layar Dapur (KDS) — halaman utama.
  *
- * Menampilkan pesanan terbayar sebagai grid tiket dengan tampilan khusus dapur.
- * Chef bisa mengubah status masak per item, dan pesanan baru "masuk realtime"
- * disimulasikan secara berkala (data tiruan) dengan sorotan + bunyi.
+ * Tiket diambil dari `GET /kitchen/orders` (pesanan berstatus DIPROSES_DAPUR,
+ * urut FIFO) lalu dijaga tetap mutakhir lewat WebSocket: `kitchen.order.created`
+ * saat kasir/pelanggan menuntaskan pembayaran, `kitchen.order.updated` saat
+ * status masak berubah — termasuk perubahan dari layar dapur lain — dan
+ * `order.ready` saat seluruh item rampung.
  *
- * Fase backend akan mengganti simulasi ini dengan WebSocket sungguhan.
+ * Perubahan status masak dikirim ke server dan state lokal memakai pesanan
+ * versi server sebagai jawabannya, sehingga dua layar dapur tidak bisa saling
+ * menimpa dengan tebakan lokal.
  */
 export default function KitchenDisplayPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  // Kafe aktif menentukan pesanan mana yang boleh tampil (isolasi tenant).
-  // Tanpa login, layar memakai kafe demo agar tetap bisa dilihat.
-  const cafeId = user?.cafeId ?? mockCafe.id;
-  const cafeName = user?.cafeName ?? mockCafe.name;
+  // Halaman ini dilindungi ProtectedRoute, jadi `user` selalu ada di sini.
+  const cafeId = user?.cafeId ?? '';
+  const cafeName = user?.cafeName ?? '';
 
   // Clock live — memperbarui jam & lama pesanan tiap detik.
   const [now, setNow] = useState(() => Date.now());
@@ -55,11 +49,9 @@ export default function KitchenDisplayPage() {
     return () => clearInterval(id);
   }, []);
 
-  // Tiket awal: contoh bawaan + pesanan yang sudah dilunasi kasir.
-  const [orders, setOrders] = useState(() => [
-    ...getKitchenQueue(cafeId),
-    ...mockKitchenOrders.filter((o) => o.cafeId === cafeId),
-  ]);
+  const [orders, setOrders] = useState<OrderWithTableDTO[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [newIds, setNewIds] = useState<Set<string>>(() => new Set());
   const [readyToasts, setReadyToasts] = useState<ReadyToastData[]>([]);
   const [muted, setMuted] = useState(false);
@@ -68,39 +60,102 @@ export default function KitchenDisplayPage() {
     mutedRef.current = muted;
   }, [muted]);
 
-  // Pesanan yang sudah "diberitahukan" ke pelanggan (agar tak dobel notif).
-  // Diinisialisasi dengan pesanan yang memang sudah siap saat halaman dibuka,
-  // supaya tidak memunculkan toast/bunyi palsu pada saat mount.
-  const notifiedRef = useRef<Set<string>>(
-    new Set(mockKitchenOrders.filter(isAllReady).map((o) => o.id)),
+  /**
+   * Pesanan yang toast "siap"-nya sudah ditampilkan, supaya siaran ulang atau
+   * pemuatan ulang daftar tidak memunculkan notifikasi dobel.
+   */
+  const notifiedRef = useRef<Set<string>>(new Set());
+
+  const dismissToast = useCallback(
+    (id: string) => setReadyToasts((prev) => prev.filter((t) => t.id !== id)),
+    [],
   );
 
-  const dismissToast = (id: string) =>
-    setReadyToasts((prev) => prev.filter((t) => t.id !== id));
+  const highlight = useCallback((id: string) => {
+    setNewIds((prev) => new Set(prev).add(id));
+    setTimeout(() => {
+      setNewIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, HIGHLIGHT_MS);
+  }, []);
 
-  // Deteksi pesanan yang baru saja menjadi "semua siap" → notifikasi pelanggan.
+  const announceReady = useCallback(
+    (order: OrderWithTableDTO) => {
+      if (notifiedRef.current.has(order.id)) return;
+      notifiedRef.current.add(order.id);
+      setReadyToasts((prev) => [...prev, { id: order.id, tableName: order.tableName }]);
+      if (!mutedRef.current) playReadyChime();
+      setTimeout(() => dismissToast(order.id), READY_TOAST_MS);
+    },
+    [dismissToast],
+  );
+
+  const load = useCallback(async () => {
+    if (!cafeId) return;
+    setLoading(true);
+    try {
+      const data = await kitchenApi.listActiveOrders(cafeId);
+      setOrders(data);
+      // Pesanan yang sudah siap saat layar dibuka tidak boleh memicu toast.
+      data.filter(isAllReady).forEach((o) => notifiedRef.current.add(o.id));
+      setError(null);
+    } catch (err) {
+      setOrders([]);
+      setError(describeApiError(err, 'Gagal memuat pesanan dapur.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [cafeId]);
+
   useEffect(() => {
-    orders.forEach((order) => {
-      if (isAllReady(order) && !notifiedRef.current.has(order.id)) {
-        notifiedRef.current.add(order.id);
-        // Pesanan selesai — keluarkan dari antrean bersama supaya tidak
-        // muncul lagi saat layar dimuat ulang.
-        removeFromKitchenQueue(order.id);
-        setReadyToasts((prev) => [
-          ...prev,
-          { id: order.id, tableName: order.tableName },
-        ]);
-        if (!mutedRef.current) playReadyChime();
-        setTimeout(() => dismissToast(order.id), READY_TOAST_MS);
+    void load();
+  }, [load]);
+
+  // Aliran realtime dari server.
+  useEffect(() => {
+    if (!cafeId) return;
+    return subscribeRealtime(cafeId, (message) => {
+      const order = message.data as OrderWithTableDTO | undefined;
+      if (!order?.id) return;
+
+      switch (message.type) {
+        case 'kitchen.order.created':
+          setOrders((prev) => {
+            if (prev.some((o) => o.id === order.id)) return prev;
+            return [...prev, order];
+          });
+          highlight(order.id);
+          if (!mutedRef.current) playChime();
+          break;
+
+        case 'kitchen.order.updated':
+          setOrders((prev) =>
+            prev.map((o) => (o.id === order.id ? order : o)),
+          );
+          break;
+
+        case 'order.ready':
+          // Backend menandainya SELESAI — tiketnya keluar dari layar.
+          announceReady(order);
+          setOrders((prev) => prev.filter((o) => o.id !== order.id));
+          break;
       }
     });
-  }, [orders]);
+  }, [cafeId, highlight, announceReady]);
 
-  const handleItemStatusChange = (
+  /**
+   * Ubah status masak satu item. Server adalah penentu: balasannya dipakai apa
+   * adanya, termasuk saat pesanan otomatis berpindah ke SELESAI.
+   */
+  const handleItemStatusChange = async (
     orderId: string,
     itemId: string,
     status: KitchenStatus,
   ) => {
+    // Optimistik dulu supaya sentuhan chef terasa seketika di layar sentuh.
     setOrders((prev) =>
       prev.map((order) =>
         order.id === orderId
@@ -113,67 +168,22 @@ export default function KitchenDisplayPage() {
           : order,
       ),
     );
+
+    try {
+      const updated = await kitchenApi.updateItemStatus(cafeId, itemId, status);
+      if (isAllReady(updated)) {
+        announceReady(updated);
+        setOrders((prev) => prev.filter((o) => o.id !== updated.id));
+      } else {
+        setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+      }
+      setError(null);
+    } catch (err) {
+      // Gagal — kembalikan ke keadaan server agar layar tidak berbohong.
+      setError(describeApiError(err, 'Status masak gagal disimpan.'));
+      void load();
+    }
   };
-
-  // Simulasikan satu pesanan masuk baru: taruh di depan, sorot sementara, bunyi.
-  const spawnOrder = useCallback(() => {
-    const order = generateRandomKitchenOrder(cafeId);
-    setOrders((prev) => [order, ...prev].slice(0, MAX_ORDERS));
-    setNewIds((prev) => new Set(prev).add(order.id));
-    if (!mutedRef.current) playChime();
-    setTimeout(() => {
-      setNewIds((prev) => {
-        const next = new Set(prev);
-        next.delete(order.id);
-        return next;
-      });
-    }, HIGHLIGHT_MS);
-  }, [cafeId]);
-
-  // Timer otomatis pesanan masuk.
-  useEffect(() => {
-    const id = setInterval(spawnOrder, AUTO_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [spawnOrder]);
-
-  // Jejak tiket yang sudah pernah tampil, agar pesanan dari kasir tidak dobel.
-  const knownIdsRef = useRef<Set<string>>(new Set(orders.map((o) => o.id)));
-  useEffect(() => {
-    orders.forEach((order) => knownIdsRef.current.add(order.id));
-  }, [orders]);
-
-  /**
-   * Pesanan yang baru dikonfirmasi lunas oleh kasir langsung muncul di layar —
-   * termasuk bila kasir bekerja di tab/perangkat lain. Perlakuannya sama dengan
-   * pesanan masuk lainnya: disorot "BARU" dan berbunyi.
-   *
-   * Fase backend: ini digantikan event WebSocket `kitchen.order.created`.
-   */
-  useEffect(() => {
-    const handleQueueChange = () => {
-      const incoming = getKitchenQueue(cafeId).filter(
-        (order) => !knownIdsRef.current.has(order.id),
-      );
-      if (incoming.length === 0) return;
-
-      const incomingIds = incoming.map((order) => order.id);
-      incomingIds.forEach((id) => knownIdsRef.current.add(id));
-
-      setOrders((prev) => [...incoming, ...prev].slice(0, MAX_ORDERS));
-      setNewIds((prev) => new Set([...prev, ...incomingIds]));
-      if (!mutedRef.current) playChime();
-
-      setTimeout(() => {
-        setNewIds((prev) => {
-          const next = new Set(prev);
-          incomingIds.forEach((id) => next.delete(id));
-          return next;
-        });
-      }, HIGHLIGHT_MS);
-    };
-
-    return subscribeKitchenQueue(handleQueueChange);
-  }, [cafeId]);
 
   const clock = new Date(now).toLocaleTimeString('id-ID', {
     hour: '2-digit',
@@ -196,10 +206,10 @@ export default function KitchenDisplayPage() {
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={spawnOrder}
-            className="rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-brand-500 active:scale-95"
+            onClick={() => void load()}
+            className="rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-slate-700 active:scale-95"
           >
-            + Simulasi Pesanan Baru
+            Muat ulang
           </button>
           <button
             type="button"
@@ -258,7 +268,37 @@ export default function KitchenDisplayPage() {
 
       {/* Grid tiket */}
       <main className="p-5">
-        {orders.length === 0 ? (
+        {error && (
+          <div
+            role="alert"
+            className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-rose-950 px-4 py-3 text-sm text-rose-200 ring-1 ring-rose-800"
+          >
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="rounded-lg bg-rose-900 px-3 py-1.5 font-semibold transition hover:bg-rose-800"
+            >
+              Coba lagi
+            </button>
+          </div>
+        )}
+
+        {loading ? (
+          <div
+            role="status"
+            className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+          >
+            <span className="sr-only">Memuat pesanan dapur…</span>
+            {Array.from({ length: 8 }, (_, index) => (
+              <div
+                key={index}
+                aria-hidden
+                className="h-64 animate-pulse rounded-2xl bg-slate-800"
+              />
+            ))}
+          </div>
+        ) : orders.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-32 text-center text-slate-500">
             <span className="text-6xl">🍽️</span>
             <p className="mt-4 text-xl font-semibold">Belum ada pesanan masuk</p>
@@ -273,7 +313,7 @@ export default function KitchenDisplayPage() {
                 now={now}
                 isNew={newIds.has(order.id)}
                 onItemStatusChange={(itemId, status) =>
-                  handleItemStatusChange(order.id, itemId, status)
+                  void handleItemStatusChange(order.id, itemId, status)
                 }
               />
             ))}

@@ -6,6 +6,7 @@ import type {
   Payment,
   PaymentMethod,
   PaymentStatus,
+  Table,
 } from '@prisma/client';
 
 // DTO respons untuk pesanan & pembayaran — Decimal → number, tanggal → ISO
@@ -85,4 +86,24 @@ export function toOrderDTO(order: OrderWithRelations): OrderDTO {
     createdAt: order.createdAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
   };
+}
+
+/**
+ * Pesanan beserta nama mejanya.
+ *
+ * Layar kasir DAN Layar Dapur sama-sama memanggil tamu dengan nama meja
+ * ("Meja 12"), bukan id. Menyertakannya di sini menghemat satu pemanggilan
+ * tambahan dari klien — dan untuk dapur memang tidak ada jalan lain: peran
+ * DAPUR tidak berhak memanggil endpoint daftar meja (khusus OWNER).
+ */
+export interface OrderWithTableDTO extends OrderDTO {
+  tableName: string;
+}
+
+export type OrderWithTable = OrderWithRelations & {
+  table: Pick<Table, 'tableName'>;
+};
+
+export function toOrderWithTableDTO(order: OrderWithTable): OrderWithTableDTO {
+  return { ...toOrderDTO(order), tableName: order.table.tableName };
 }

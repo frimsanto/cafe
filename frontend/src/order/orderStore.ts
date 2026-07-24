@@ -1,52 +1,16 @@
-import type { CartLine } from '../types/cart';
-import type { TableInfo } from '../types/menu';
-import type { Order, PaymentMethodCode } from '../types/order';
+import type { Order } from '../types/order';
 
 const LAST_ORDER_KEY = 'cafeos-last-order';
 
-/** ID acak sederhana untuk mock (fase frontend). */
-function randomId(prefix: string): string {
-  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
 /**
- * Susun sebuah Order dari isi keranjang. Pada fase frontend ini murni lokal;
- * fase backend akan menggantinya dengan POST /orders yang mengembalikan order
- * asli beserta id transaksi dari gateway.
+ * Pesanan terakhir yang berhasil dibayar, disimpan untuk halaman sukses &
+ * struk. Isinya adalah pesanan versi SERVER (hasil `POST /orders` lalu
+ * `/pay`) — bukan lagi susunan lokal, sehingga id pesanan, id transaksi, dan
+ * totalnya sama persis dengan yang tercatat di database.
+ *
+ * sessionStorage, bukan localStorage: struk satu kunjungan tidak boleh muncul
+ * lagi pada kunjungan berikutnya.
  */
-export function buildOrder(
-  lines: CartLine[],
-  table: TableInfo,
-  cafeId: string,
-  method: PaymentMethodCode,
-): Order {
-  const totalAmount = lines.reduce((sum, l) => sum + l.quantity * l.item.price, 0);
-
-  return {
-    id: randomId('ORD'),
-    cafeId,
-    tableId: table.id,
-    tableName: table.tableName,
-    status: 'DIPROSES_DAPUR', // setelah pembayaran sukses, pesanan masuk dapur
-    items: lines.map((l) => ({
-      id: randomId('OI'),
-      menuItemId: l.item.id,
-      name: l.item.name,
-      price: l.item.price,
-      quantity: l.quantity,
-      notes: l.notes,
-      kitchenStatus: 'WAITING',
-    })),
-    totalAmount,
-    payment: {
-      method,
-      status: 'SUCCESS',
-      transactionId: randomId('TRX'),
-    },
-    createdAt: new Date().toISOString(),
-  };
-}
-
 export function saveLastOrder(order: Order): void {
   try {
     window.sessionStorage.setItem(LAST_ORDER_KEY, JSON.stringify(order));
