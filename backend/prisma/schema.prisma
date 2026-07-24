@@ -1,0 +1,282 @@
+// CafeOS — skema database (Prisma / PostgreSQL).
+// Fase 1 backend: domain Menu Digital & Pemesanan (menu, pesanan, pembayaran).
+//
+// Multi-tenant: setiap baris data tenant membawa `cafeId` untuk isolasi data
+// antar kafe. Tabel `users`/auth menyusul pada fase Autentikasi & Multi-Tenant.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ────────────────────────────────────────────────────────────────────
+
+enum OrderStatus {
+  MENUNGGU_PEMBAYARAN
+  DIPROSES_DAPUR
+  SELESAI
+}
+
+enum KitchenStatus {
+  WAITING
+  COOKING
+  READY
+}
+
+enum PaymentMethod {
+  QRIS
+  GOPAY
+  CARD
+  CASH
+  EDC
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+/// Peran staf dalam sebuah kafe.
+enum Role {
+  OWNER
+  KASIR
+  DAPUR
+}
+
+// ── Tenant ───────────────────────────────────────────────────────────────────
+
+model Cafe {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  address   String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users                User[]
+  categories           MenuCategory[]
+  menuItems            MenuItem[]
+  tables               Table[]
+  orders               Order[]
+  pushSubscriptions    PushSubscription[]
+  dashboardPreferences DashboardPreference[]
+
+  @@map("cafes")
+}
+
+// ── Pengguna (staf & pemilik) ────────────────────────────────────────────────
+
+model User {
+  id           String @id @default(uuid()) @db.Uuid
+  cafeId       String @map("cafe_id") @db.Uuid
+  name         String
+  // Email unik lintas sistem — dipakai sebagai identitas login.
+  email        String @unique
+  // Hanya hash yang disimpan; kata sandi mentah tidak pernah masuk database.
+  passwordHash String @map("password_hash")
+  role         Role   @default(OWNER)
+
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  cafe                Cafe                 @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  dashboardPreference DashboardPreference?
+
+  @@index([cafeId])
+  @@map("users")
+}
+
+// ── Meja ─────────────────────────────────────────────────────────────────────
+
+model Table {
+  id        String    @id @default(uuid()) @db.Uuid
+  cafeId    String    @map("cafe_id") @db.Uuid
+  tableName String    @map("table_name")
+  // Referensi/token unik yang dienkode ke QR code meja.
+  qrCode    String    @unique @map("qr_code")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  cafe   Cafe    @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  // CATATAN: unik nama meja per kafe (abaikan besar-kecil huruf, hanya baris
+  // hidup) berupa PARTIAL UNIQUE INDEX di migrasi
+  // `20260724060000_table_management_constraints` — Prisma belum bisa
+  // menyatakannya di schema. Jangan hapus saat `prisma migrate dev`.
+  @@index([cafeId])
+  @@map("tables")
+}
+
+// ── Menu ─────────────────────────────────────────────────────────────────────
+
+model MenuCategory {
+  id            String    @id @default(uuid()) @db.Uuid
+  cafeId        String    @map("cafe_id") @db.Uuid
+  name          String
+  orderPosition Int       @default(0) @map("order_position")
+  deletedAt     DateTime? @map("deleted_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  cafe  Cafe       @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  items MenuItem[]
+  // CATATAN: unik nama kategori per kafe (abaikan besar-kecil huruf, hanya
+  // baris hidup) dipasang sebagai PARTIAL UNIQUE INDEX lewat SQL mentah di
+  // migrasi `20260724050000_menu_management_constraints` — Prisma belum bisa
+  // menyatakan index parsial/ekspresi di schema. Jangan hapus index itu saat
+  // menjalankan `prisma migrate dev`.
+
+  @@index([cafeId])
+  // Urutan tampil kategori pada menu pelanggan & halaman manajemen menu.
+  @@index([cafeId, orderPosition])
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id          String    @id @default(uuid()) @db.Uuid
+  cafeId      String    @map("cafe_id") @db.Uuid
+  categoryId  String    @map("category_id") @db.Uuid
+  name        String
+  description String    @default("")
+  price       Decimal   @db.Decimal(12, 2)
+  imageUrl    String    @default("") @map("image_url")
+  isAvailable Boolean   @default(true) @map("is_available")
+  deletedAt   DateTime? @map("deleted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  cafe       Cafe         @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  category   MenuCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+  // CATATAN: unik nama item per kategori (abaikan besar-kecil huruf, hanya
+  // baris hidup) juga berupa partial unique index di migrasi yang sama.
+
+  @@index([cafeId])
+  @@index([categoryId])
+  // Menu pelanggan hanya menampilkan item yang tersedia.
+  @@index([cafeId, isAvailable])
+  @@map("menu_items")
+}
+
+// ── Pesanan ──────────────────────────────────────────────────────────────────
+
+model Order {
+  id          String      @id @default(uuid()) @db.Uuid
+  cafeId      String      @map("cafe_id") @db.Uuid
+  tableId     String      @map("table_id") @db.Uuid
+  status      OrderStatus @default(MENUNGGU_PEMBAYARAN)
+  totalAmount Decimal     @default(0) @map("total_amount") @db.Decimal(12, 2)
+
+  // Ringkasan pembayaran yang disalin dari baris `payments` saat pesanan
+  // dirilis ke dapur. Sumber kebenaran tetap tabel `payments`; salinan di sini
+  // membuat laporan bisa menyaring "kapan uangnya masuk" tanpa join, dan
+  // memperbaiki omzet harian yang sebelumnya memakai waktu pesanan dibuat.
+  paymentMethod PaymentMethod? @map("payment_method")
+  paidAt        DateTime?      @map("paid_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cafe              Cafe               @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  table             Table              @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  items             OrderItem[]
+  payment           Payment?
+  pushSubscriptions PushSubscription[]
+
+  @@index([cafeId])
+  @@index([tableId])
+  @@index([cafeId, status])
+  @@index([createdAt])
+  // Laporan omzet menyaring berdasarkan kapan pesanan DIBAYAR.
+  @@index([cafeId, paidAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id            String        @id @default(uuid()) @db.Uuid
+  orderId       String        @map("order_id") @db.Uuid
+  menuItemId    String        @map("menu_item_id") @db.Uuid
+  // Snapshot nama & harga saat dipesan (tahan perubahan menu di kemudian hari).
+  name          String
+  price         Decimal       @db.Decimal(12, 2)
+  quantity      Int           @default(1)
+  notes         String        @default("")
+  kitchenStatus KitchenStatus @default(WAITING) @map("kitchen_status")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([menuItemId])
+  // Mendukung query/agregasi status masak untuk Layar Dapur (KDS) & dasbor.
+  @@index([kitchenStatus])
+  @@map("order_items")
+}
+
+// ── Pembayaran ───────────────────────────────────────────────────────────────
+
+model Payment {
+  id            String        @id @default(uuid()) @db.Uuid
+  orderId       String        @unique @map("order_id") @db.Uuid
+  method        PaymentMethod
+  status        PaymentStatus @default(PENDING)
+  amount        Decimal       @db.Decimal(12, 2)
+  // ID transaksi dari gateway eksternal (mis. QRIS). Null saat masih PENDING.
+  transactionId String?       @map("transaction_id")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("payments")
+}
+
+// ── Preferensi tampilan dasbor ───────────────────────────────────────────────
+
+model DashboardPreference {
+  id      String @id @default(uuid()) @db.Uuid
+  cafeId  String @map("cafe_id") @db.Uuid
+  // Pemilik preferensi — satu baris per pengguna.
+  userId  String @unique @map("user_id") @db.Uuid
+  // Peta widget → tampil/sembunyi, mis. {"revenue":true,"topMenu":false}.
+  // Disimpan sebagai JSON agar widget baru tidak memerlukan migrasi kolom.
+  widgets Json   @default("{}")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cafe Cafe @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([cafeId])
+  @@map("dashboard_preferences")
+}
+
+// ── Langganan Push (Web Push / VAPID) ────────────────────────────────────────
+
+model PushSubscription {
+  id        String   @id @default(uuid()) @db.Uuid
+  cafeId    String   @map("cafe_id") @db.Uuid
+  orderId   String   @map("order_id") @db.Uuid
+  // Data langganan dari browser (PushSubscription API).
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  cafe  Cafe  @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("push_subscriptions")
+}
