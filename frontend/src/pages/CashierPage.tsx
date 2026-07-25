@@ -165,7 +165,7 @@ export default function CashierPage() {
 
         {pending.length > 0 && (
           <div className="relative">
-            <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+            <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-warm-muted">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <circle cx="11" cy="11" r="7" />
                 <path d="m20 20-3.5-3.5" />
@@ -177,7 +177,7 @@ export default function CashierPage() {
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Cari meja atau nomor pesanan…"
               aria-label="Cari pesanan"
-              className="w-full rounded-xl border-0 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-800 shadow-sm ring-1 ring-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 sm:max-w-md"
+              className="w-full rounded-xl border-0 bg-warm-paper py-2.5 pl-10 pr-4 text-sm text-warm-espresso shadow-sm ring-1 ring-warm-line placeholder:text-warm-muted focus:outline-none focus:ring-2 focus:ring-warm-amber sm:max-w-md"
             />
           </div>
         )}
@@ -189,30 +189,30 @@ export default function CashierPage() {
               <div
                 key={index}
                 aria-hidden
-                className="h-40 animate-pulse rounded-2xl bg-white/70 ring-1 ring-slate-200"
+                className="skeleton-warm h-40 rounded-2xl"
               />
             ))}
           </div>
         ) : pending.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-20 text-center">
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-warm-line bg-warm-paper/60 px-6 py-20 text-center">
             <span className="text-4xl">💳</span>
-            <h2 className="mt-3 text-lg font-semibold text-slate-700">
+            <h2 className="mt-3 text-lg font-semibold text-warm-espresso">
               Tidak ada pembayaran tertunda
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-warm-muted">
               Pesanan yang memilih bayar di kasir akan muncul di sini.
             </p>
           </div>
         ) : visible.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-16 text-center">
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-warm-line bg-warm-paper/60 px-6 py-16 text-center">
             <span className="text-3xl">🔍</span>
-            <h2 className="mt-3 font-semibold text-slate-700">
+            <h2 className="mt-3 font-semibold text-warm-espresso">
               Tidak ada pesanan yang cocok
             </h2>
             <button
               type="button"
               onClick={() => setQuery('')}
-              className="mt-4 rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-200"
+              className="mt-4 rounded-lg bg-warm-espresso/5 px-4 py-2 text-sm font-semibold text-warm-subtle transition hover:bg-warm-espresso/10"
             >
               Reset pencarian
             </button>

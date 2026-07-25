@@ -35,7 +35,7 @@ export default function MoveItemModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="pindah-item-title"
@@ -47,12 +47,12 @@ export default function MoveItemModal({
         className="absolute inset-0 cursor-default"
       />
 
-      <div className="relative max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-slate-50 p-5 shadow-2xl sm:rounded-3xl">
-        <h2 id="pindah-item-title" className="text-lg font-bold text-slate-900">
+      <div className="relative max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-warm-cream p-5 shadow-2xl sm:rounded-3xl">
+        <h2 id="pindah-item-title" className="text-lg font-bold text-warm-espresso">
           Pindahkan Item
         </h2>
-        <p className="text-sm text-slate-500">
-          <span className="font-semibold text-slate-700">{item.name}</span> sekarang
+        <p className="text-sm text-warm-muted">
+          <span className="font-semibold text-warm-subtle">{item.name}</span> sekarang
           ada di kategori {currentName}.
         </p>
 
@@ -66,8 +66,8 @@ export default function MoveItemModal({
             return (
               <label
                 key={category.id}
-                className={`flex cursor-pointer items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 transition ${
-                  selected ? 'ring-2 ring-brand-500' : 'ring-slate-200 hover:bg-slate-50'
+                className={`flex cursor-pointer items-center gap-3 rounded-2xl bg-warm-paper px-4 py-3 shadow-sm ring-1 transition ${
+                  selected ? 'ring-2 ring-warm-amber' : 'ring-warm-line hover:bg-warm-espresso/5'
                 }`}
               >
                 <input
@@ -76,18 +76,18 @@ export default function MoveItemModal({
                   value={category.id}
                   checked={selected}
                   onChange={() => setTargetId(category.id)}
-                  className="h-4 w-4 text-brand-600 focus:ring-brand-500"
+                  className="h-4 w-4 accent-warm-amber focus:ring-warm-amber"
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-slate-800">
+                  <span className="block truncate font-medium text-warm-espresso">
                     {category.name}
                   </span>
-                  <span className="block text-xs text-slate-500">
+                  <span className="block text-xs text-warm-muted">
                     {category.items.length} item
                   </span>
                 </span>
                 {isCurrent && (
-                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                  <span className="shrink-0 rounded-full bg-warm-espresso/5 px-2 py-0.5 text-[11px] font-semibold text-warm-muted">
                     Saat ini
                   </span>
                 )}
@@ -100,7 +100,7 @@ export default function MoveItemModal({
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 rounded-2xl bg-slate-200 py-3 font-semibold text-slate-600 transition hover:bg-slate-300"
+            className="flex-1 rounded-2xl bg-warm-espresso/10 py-3 font-semibold text-warm-subtle transition hover:bg-warm-espresso/20"
           >
             Batal
           </button>
@@ -108,7 +108,7 @@ export default function MoveItemModal({
             type="button"
             disabled={unchanged}
             onClick={() => onMove(targetId)}
-            className="flex-1 rounded-2xl bg-brand-600 py-3 font-semibold text-white shadow-sm transition hover:bg-brand-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="flex-1 rounded-2xl bg-warm-amber py-3 font-semibold text-white shadow-sm transition hover:brightness-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-warm-line disabled:text-warm-muted"
           >
             Pindahkan
           </button>

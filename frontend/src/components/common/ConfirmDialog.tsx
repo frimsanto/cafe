@@ -43,7 +43,7 @@ export default function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-title"
@@ -55,20 +55,20 @@ export default function ConfirmDialog({
         className="absolute inset-0 cursor-default"
       />
 
-      <div className="relative w-full max-w-sm rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl">
+      <div className="relative w-full max-w-sm rounded-t-3xl bg-warm-paper p-5 shadow-2xl sm:rounded-3xl">
         <div className="flex items-start gap-3">
           <span
             className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg ${
-              tone === 'danger' ? 'bg-rose-50' : 'bg-brand-50'
+              tone === 'danger' ? 'bg-rose-50' : 'bg-warm-amber/10'
             }`}
           >
             {tone === 'danger' ? '🗑️' : '❓'}
           </span>
           <div className="min-w-0">
-            <h2 id="confirm-title" className="font-bold text-slate-900">
+            <h2 id="confirm-title" className="font-bold text-warm-espresso">
               {title}
             </h2>
-            <div className="mt-1 text-sm text-slate-500">{message}</div>
+            <div className="mt-1 text-sm text-warm-muted">{message}</div>
           </div>
         </div>
 
@@ -78,7 +78,7 @@ export default function ConfirmDialog({
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="flex-1 rounded-2xl bg-slate-200 py-3 font-semibold text-slate-600 transition hover:bg-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex-1 rounded-2xl bg-warm-espresso/10 py-3 font-semibold text-warm-subtle transition hover:bg-warm-espresso/20 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {cancelLabel}
           </button>
@@ -86,10 +86,10 @@ export default function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={busy}
-            className={`flex-1 rounded-2xl py-3 font-semibold text-white shadow-sm transition active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300 ${
+            className={`flex-1 rounded-2xl py-3 font-semibold text-white shadow-sm transition active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-warm-line disabled:text-warm-muted ${
               tone === 'danger'
                 ? 'bg-rose-600 hover:bg-rose-700'
-                : 'bg-brand-600 hover:bg-brand-700'
+                : 'bg-warm-amber hover:brightness-95'
             }`}
           >
             {busy ? 'Memproses…' : confirmLabel}

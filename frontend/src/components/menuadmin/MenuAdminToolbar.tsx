@@ -31,14 +31,14 @@ export default function MenuAdminToolbar({
   const chipClass = (active: boolean) =>
     `shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
       active
-        ? 'bg-brand-600 text-white shadow-sm'
-        : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'
+        ? 'bg-warm-espresso text-warm-paper shadow-sm'
+        : 'bg-warm-paper text-warm-subtle ring-1 ring-warm-line hover:bg-warm-espresso/5'
     }`;
 
   return (
     <div className="space-y-3">
       <div className="relative">
-        <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+        <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-warm-muted">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <circle cx="11" cy="11" r="7" />
             <path d="m20 20-3.5-3.5" />
@@ -50,7 +50,7 @@ export default function MenuAdminToolbar({
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="Cari nama atau deskripsi menu…"
           aria-label="Cari menu"
-          className="w-full rounded-xl border-0 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-800 shadow-sm ring-1 ring-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="w-full rounded-xl border-0 bg-warm-paper py-2.5 pl-10 pr-4 text-sm text-warm-espresso shadow-sm ring-1 ring-warm-line placeholder:text-warm-muted focus:outline-none focus:ring-2 focus:ring-warm-amber"
         />
       </div>
 

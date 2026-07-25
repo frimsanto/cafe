@@ -124,7 +124,7 @@ export default function TableManagementPage() {
         <button
           type="button"
           onClick={() => setFormOpen(true)}
-          className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700"
+          className="flex items-center gap-1.5 rounded-lg bg-warm-amber px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <path d="M12 5v14M5 12h14" />
@@ -168,24 +168,24 @@ export default function TableManagementPage() {
               <div
                 key={index}
                 aria-hidden="true"
-                className="h-44 animate-pulse rounded-2xl bg-white/70 ring-1 ring-slate-200"
+                className="skeleton-warm h-44 rounded-2xl"
               />
             ))}
           </div>
         ) : tables.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-20 text-center">
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-warm-line bg-warm-paper/60 px-6 py-20 text-center">
             <span className="text-4xl">🪑</span>
-            <h2 className="mt-3 text-lg font-semibold text-slate-700">
+            <h2 className="mt-3 text-lg font-semibold text-warm-espresso">
               Belum ada meja
             </h2>
-            <p className="mt-1 max-w-sm text-sm text-slate-500">
+            <p className="mt-1 max-w-sm text-sm text-warm-muted">
               Tambahkan meja untuk kafe {user.cafeName}. Setiap meja mendapat QR
               code sendiri yang dipindai pelanggan untuk membuka menu digital.
             </p>
             <button
               type="button"
               onClick={() => setFormOpen(true)}
-              className="mt-4 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700"
+              className="mt-4 rounded-xl bg-warm-amber px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-95"
             >
               Tambah meja pertama
             </button>
@@ -193,13 +193,13 @@ export default function TableManagementPage() {
         ) : (
           <>
             {/* Keterangan warna status */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-warm-muted">
               <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="h-2 w-2 rounded-full bg-warm-success" />
                 Digunakan — masih ada pesanan berjalan
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-slate-400" />
+                <span className="h-2 w-2 rounded-full bg-warm-muted" />
                 Kosong — siap dipakai tamu berikutnya
               </span>
             </div>

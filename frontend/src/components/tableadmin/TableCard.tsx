@@ -68,8 +68,8 @@ export default function TableCard({
 
   return (
     <article
-      className={`flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 transition ${
-        highlighted ? 'ring-2 ring-emerald-400' : 'ring-slate-200 hover:ring-brand-300'
+      className={`flex flex-col gap-3 rounded-2xl bg-warm-paper p-4 shadow-sm ring-1 transition ${
+        highlighted ? 'ring-2 ring-warm-success' : 'ring-warm-line hover:ring-warm-amber'
       }`}
     >
       {editing ? (
@@ -92,10 +92,10 @@ export default function TableCard({
             }}
             aria-label={`Nama baru untuk ${table.tableName}`}
             aria-invalid={Boolean(error)}
-            className={`w-full rounded-lg border-0 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-800 shadow-sm ring-1 focus:outline-none focus:ring-2 ${
+            className={`w-full rounded-lg border-0 bg-warm-paper px-2.5 py-1.5 text-sm font-semibold text-warm-espresso shadow-sm ring-1 focus:outline-none focus:ring-2 ${
               error
                 ? 'ring-rose-400 focus:ring-rose-500'
-                : 'ring-slate-200 focus:ring-brand-500'
+                : 'ring-warm-line focus:ring-warm-amber'
             }`}
           />
           {error && <p className="mt-1 text-xs text-rose-600">{error}</p>}
@@ -105,7 +105,7 @@ export default function TableCard({
               type="button"
               onClick={() => void save()}
               disabled={saving}
-              className="flex-1 rounded-lg bg-brand-600 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="flex-1 rounded-lg bg-warm-amber py-1.5 text-xs font-semibold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-warm-line disabled:text-warm-muted"
             >
               {saving ? 'Menyimpan…' : 'Simpan'}
             </button>
@@ -113,7 +113,7 @@ export default function TableCard({
               type="button"
               onClick={cancelEditing}
               disabled={saving}
-              className="flex-1 rounded-lg bg-slate-200 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-300 disabled:cursor-not-allowed"
+              className="flex-1 rounded-lg bg-warm-espresso/10 py-1.5 text-xs font-semibold text-warm-subtle transition hover:bg-warm-espresso/20 disabled:cursor-not-allowed"
             >
               Batal
             </button>
@@ -122,7 +122,7 @@ export default function TableCard({
       ) : (
         <>
           <div className="flex items-start justify-between gap-2">
-            <h3 className="truncate text-base font-bold text-slate-900">
+            <h3 className="truncate text-base font-bold text-warm-espresso">
               {table.tableName}
             </h3>
             <div className="flex shrink-0 items-center">
@@ -131,7 +131,7 @@ export default function TableCard({
                 onClick={startEditing}
                 aria-label={`Ubah nama ${table.tableName}`}
                 title="Ubah nama meja"
-                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-brand-50 hover:text-brand-700"
+                className="rounded-lg p-1.5 text-warm-muted transition hover:bg-warm-amber/10 hover:text-warm-amber"
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 20h9" />
@@ -144,7 +144,7 @@ export default function TableCard({
                 onClick={() => onDelete(table)}
                 aria-label={`Hapus ${table.tableName}`}
                 title="Hapus meja"
-                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                className="rounded-lg p-1.5 text-warm-muted transition hover:bg-rose-50 hover:text-rose-600"
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
@@ -170,7 +170,7 @@ export default function TableCard({
             type="button"
             onClick={() => onShowQr(table)}
             aria-label={`Lihat & unduh QR ${table.tableName}`}
-            className="group flex flex-col items-center gap-1.5 rounded-xl p-1 transition hover:bg-brand-50"
+            className="group flex flex-col items-center gap-1.5 rounded-xl p-1 transition hover:bg-warm-amber/10"
           >
             {qrThumb ? (
               <img
@@ -181,14 +181,14 @@ export default function TableCard({
                 className="h-20 w-20 rounded-lg"
               />
             ) : (
-              <span className="h-20 w-20 animate-pulse rounded-lg bg-slate-100" />
+              <span className="h-20 w-20 animate-pulse rounded-lg bg-warm-espresso/5" />
             )}
-            <span className="text-xs font-semibold text-slate-500 group-hover:text-brand-700">
+            <span className="text-xs font-semibold text-warm-muted group-hover:text-warm-amber">
               Lihat QR
             </span>
           </button>
 
-          <p className="truncate text-center font-mono text-xs text-slate-400">
+          <p className="truncate text-center font-mono text-xs text-warm-muted">
             {table.qrCode}
           </p>
         </>

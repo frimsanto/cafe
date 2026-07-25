@@ -37,7 +37,7 @@ export default function ReceiptPrintModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="struk-title"
@@ -49,13 +49,13 @@ export default function ReceiptPrintModal({
         className="print-hidden absolute inset-0 cursor-default"
       />
 
-      <div className="relative flex max-h-[92vh] w-full max-w-md flex-col rounded-t-3xl bg-slate-50 shadow-2xl sm:rounded-3xl">
+      <div className="relative flex max-h-[92vh] w-full max-w-md flex-col rounded-t-3xl bg-warm-cream shadow-2xl sm:rounded-3xl">
         <div className="print-hidden flex items-start justify-between gap-3 p-5 pb-3">
           <div>
-            <h2 id="struk-title" className="text-lg font-bold text-slate-900">
+            <h2 id="struk-title" className="text-lg font-bold text-warm-espresso">
               Pratinjau Struk
             </h2>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-warm-muted">
               Tampilan ini yang akan tercetak di kertas 80mm.
             </p>
           </div>
@@ -63,7 +63,7 @@ export default function ReceiptPrintModal({
             type="button"
             onClick={onClose}
             aria-label="Tutup"
-            className="rounded-full p-1.5 text-slate-400 transition hover:bg-slate-200"
+            className="rounded-full p-1.5 text-warm-muted transition hover:bg-warm-espresso/10"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -79,7 +79,7 @@ export default function ReceiptPrintModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-2xl bg-slate-200 px-4 py-3 font-semibold text-slate-600 transition hover:bg-slate-300 sm:flex-1"
+            className="rounded-2xl bg-warm-espresso/10 px-4 py-3 font-semibold text-warm-subtle transition hover:bg-warm-espresso/20 sm:flex-1"
           >
             Tutup
           </button>
@@ -87,14 +87,14 @@ export default function ReceiptPrintModal({
             type="button"
             onClick={onDownloadPdf}
             disabled={downloading}
-            className="rounded-2xl bg-white px-4 py-3 font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-400 sm:flex-1"
+            className="rounded-2xl bg-warm-paper px-4 py-3 font-semibold text-warm-subtle shadow-sm ring-1 ring-warm-line transition hover:bg-warm-espresso/5 disabled:cursor-not-allowed disabled:text-warm-muted sm:flex-1"
           >
             {downloading ? 'Menyiapkan…' : 'Unduh PDF'}
           </button>
           <button
             type="button"
             onClick={() => window.print()}
-            className="rounded-2xl bg-brand-600 px-4 py-3 font-semibold text-white shadow-sm transition hover:bg-brand-700 active:scale-[0.99] sm:flex-1"
+            className="rounded-2xl bg-warm-amber px-4 py-3 font-semibold text-white shadow-sm transition hover:brightness-95 active:scale-[0.99] sm:flex-1"
           >
             Cetak
           </button>

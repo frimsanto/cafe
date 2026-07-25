@@ -45,7 +45,7 @@ export default function PaymentSuccessModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="bayar-sukses-title"
@@ -57,38 +57,38 @@ export default function PaymentSuccessModal({
         className="absolute inset-0 cursor-default"
       />
 
-      <div className="relative w-full max-w-md rounded-t-3xl bg-white p-5 text-center shadow-2xl sm:rounded-3xl">
-        <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-3xl">
+      <div className="relative w-full max-w-md rounded-t-3xl bg-warm-paper p-5 text-center shadow-2xl sm:rounded-3xl">
+        <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-warm-success/10 text-3xl">
           ✅
         </span>
 
-        <h2 id="bayar-sukses-title" className="mt-3 text-lg font-bold text-slate-900">
+        <h2 id="bayar-sukses-title" className="mt-3 text-lg font-bold text-warm-espresso">
           Pembayaran berhasil
         </h2>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-warm-muted">
           {order.tableName} · {methodName} ·{' '}
           <span className="font-mono">{order.payment?.transactionId ?? '-'}</span>
         </p>
 
-        <dl className="mt-4 space-y-2 rounded-2xl bg-slate-50 p-4 text-sm">
+        <dl className="mt-4 space-y-2 rounded-2xl bg-warm-cream p-4 text-sm">
           <div className="flex items-center justify-between">
-            <dt className="text-slate-500">Total dibayar</dt>
-            <dd className="font-bold text-slate-900 tabular-nums">
+            <dt className="text-warm-muted">Total dibayar</dt>
+            <dd className="font-bold text-warm-espresso tabular-nums">
               {formatRupiah(order.totalAmount)}
             </dd>
           </div>
 
           {change !== null && (
-            <div className="flex items-center justify-between border-t border-slate-200 pt-2">
-              <dt className="text-slate-500">Kembalian</dt>
-              <dd className="text-lg font-bold text-emerald-600 tabular-nums">
+            <div className="flex items-center justify-between border-t border-warm-line pt-2">
+              <dt className="text-warm-muted">Kembalian</dt>
+              <dd className="text-lg font-bold text-warm-success tabular-nums">
                 {formatRupiah(change)}
               </dd>
             </div>
           )}
         </dl>
 
-        <p className="mt-3 text-sm text-slate-500">
+        <p className="mt-3 text-sm text-warm-muted">
           Pesanan sudah diteruskan ke dapur.
         </p>
 
@@ -96,7 +96,7 @@ export default function PaymentSuccessModal({
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 rounded-2xl bg-slate-200 py-3 font-semibold text-slate-600 transition hover:bg-slate-300"
+            className="flex-1 rounded-2xl bg-warm-espresso/10 py-3 font-semibold text-warm-subtle transition hover:bg-warm-espresso/20"
           >
             Selesai
           </button>
@@ -104,7 +104,7 @@ export default function PaymentSuccessModal({
             ref={printRef}
             type="button"
             onClick={onPrint}
-            className="flex-1 rounded-2xl bg-brand-600 py-3 font-semibold text-white shadow-sm transition hover:bg-brand-700 active:scale-[0.99]"
+            className="flex-1 rounded-2xl bg-warm-amber py-3 font-semibold text-white shadow-sm transition hover:brightness-95 active:scale-[0.99]"
           >
             Cetak Struk
           </button>

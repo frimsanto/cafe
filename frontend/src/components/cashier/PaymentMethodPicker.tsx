@@ -18,7 +18,7 @@ export default function PaymentMethodPicker({
 }: PaymentMethodPickerProps) {
   return (
     <fieldset>
-      <legend className="mb-2 text-sm font-medium text-slate-700">
+      <legend className="mb-2 text-sm font-medium text-warm-subtle">
         Metode pembayaran
       </legend>
 
@@ -29,10 +29,10 @@ export default function PaymentMethodPicker({
           return (
             <label
               key={method.code}
-              className={`flex cursor-pointer items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 transition ${
+              className={`flex cursor-pointer items-center gap-3 rounded-2xl bg-warm-paper px-4 py-3 shadow-sm ring-1 transition ${
                 selected
-                  ? 'ring-2 ring-brand-500'
-                  : 'ring-slate-200 hover:bg-slate-50'
+                  ? 'ring-2 ring-warm-amber'
+                  : 'ring-warm-line hover:bg-warm-espresso/5'
               }`}
             >
               <input
@@ -41,14 +41,14 @@ export default function PaymentMethodPicker({
                 value={method.code}
                 checked={selected}
                 onChange={() => onChange(method.code)}
-                className="h-4 w-4 text-brand-600 focus:ring-brand-500"
+                className="h-4 w-4 accent-warm-amber focus:ring-warm-amber"
               />
               <span className="text-xl">{method.icon}</span>
               <span className="min-w-0">
-                <span className="block font-semibold text-slate-800">
+                <span className="block font-semibold text-warm-espresso">
                   {method.name}
                 </span>
-                <span className="block text-xs text-slate-500">
+                <span className="block text-xs text-warm-muted">
                   {method.description}
                 </span>
               </span>

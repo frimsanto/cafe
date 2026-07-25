@@ -16,6 +16,20 @@ export default {
           800: '#115e59',
           900: '#134e4a',
         },
+        // Palet "Cafe Ambient" — mencerminkan src/styles/tokens.css agar bisa
+        // dipakai sebagai utility (mis. bg-warm-cream, text-warm-espresso) dan
+        // mendukung modifier opacity (border-warm-espresso/10). Nilainya harus
+        // tetap sinkron dengan tokens.css sebagai sumber kebenaran.
+        warm: {
+          espresso: '#1a1208',
+          amber: '#c8891a',
+          cream: '#f0e8da',
+          paper: '#fff8f0',
+          line: '#e8d5b8',
+          muted: '#9a8a7a',
+          subtle: '#7a5c2e',
+          success: '#4a7a4a',
+        },
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'Segoe UI', 'Roboto', 'sans-serif'],

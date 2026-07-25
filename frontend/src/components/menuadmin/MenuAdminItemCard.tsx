@@ -32,11 +32,11 @@ export default function MenuAdminItemCard({
   return (
     <article
       className={`flex gap-3 rounded-2xl p-3 shadow-sm ring-1 transition ${
-        hidden ? 'bg-slate-50' : 'bg-white'
+        hidden ? 'bg-warm-cream' : 'bg-warm-paper'
       } ${
         highlighted
-          ? 'ring-2 ring-emerald-400'
-          : 'ring-slate-200 hover:ring-brand-300'
+          ? 'ring-2 ring-warm-success'
+          : 'ring-warm-line hover:ring-warm-amber'
       }`}
     >
       <MenuItemImage
@@ -51,7 +51,7 @@ export default function MenuAdminItemCard({
         <div className="flex items-start justify-between gap-2">
           <h3
             className={`truncate font-semibold ${
-              hidden ? 'text-slate-500' : 'text-slate-900'
+              hidden ? 'text-warm-muted' : 'text-warm-espresso'
             }`}
           >
             {item.name}
@@ -59,28 +59,28 @@ export default function MenuAdminItemCard({
           <span
             className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
               hidden
-                ? 'bg-slate-200 text-slate-600'
-                : 'bg-emerald-50 text-emerald-700'
+                ? 'bg-warm-espresso/10 text-warm-subtle'
+                : 'bg-warm-success/10 text-warm-success'
             }`}
           >
             <span
               aria-hidden="true"
               className={`h-1.5 w-1.5 rounded-full ${
-                hidden ? 'bg-slate-400' : 'bg-emerald-500'
+                hidden ? 'bg-warm-muted' : 'bg-warm-success'
               }`}
             />
             {hidden ? 'Disembunyikan' : 'Tampil'}
           </span>
         </div>
 
-        <p className="line-clamp-2 text-sm text-slate-500">{item.description}</p>
+        <p className="line-clamp-2 text-sm text-warm-muted">{item.description}</p>
 
         {/* Harga & aksi: pada layar sempit tombol turun ke baris berikutnya
             supaya tidak ada yang terpotong. */}
         <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
           <p
             className={`font-bold ${
-              hidden ? 'text-slate-400 line-through' : 'text-brand-700'
+              hidden ? 'text-warm-muted line-through' : 'text-warm-amber'
             }`}
           >
             {formatRupiah(item.price)}
@@ -103,8 +103,8 @@ export default function MenuAdminItemCard({
               }
               className={`rounded-lg p-1.5 transition ${
                 hidden
-                  ? 'text-emerald-600 hover:bg-emerald-50'
-                  : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+                  ? 'text-warm-success hover:bg-warm-success/10'
+                  : 'text-warm-muted hover:bg-warm-espresso/5 hover:text-warm-subtle'
               }`}
             >
               {hidden ? (
@@ -125,7 +125,7 @@ export default function MenuAdminItemCard({
               onClick={() => onMove(item)}
               aria-label={`Pindahkan ${item.name} ke kategori lain`}
               title="Pindahkan ke kategori lain"
-              className="rounded-lg p-1.5 text-slate-400 transition hover:bg-brand-50 hover:text-brand-700"
+              className="rounded-lg p-1.5 text-warm-muted transition hover:bg-warm-amber/10 hover:text-warm-amber"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3Z" />
@@ -137,7 +137,7 @@ export default function MenuAdminItemCard({
               type="button"
               onClick={() => onEdit(item)}
               aria-label={`Ubah ${item.name}`}
-              className="flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-semibold text-slate-500 transition hover:bg-brand-50 hover:text-brand-700"
+              className="flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-semibold text-warm-muted transition hover:bg-warm-amber/10 hover:text-warm-amber"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 20h9" />

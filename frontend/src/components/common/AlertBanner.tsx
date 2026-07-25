@@ -15,11 +15,11 @@ interface AlertBannerProps {
 const TONE = {
   success: {
     icon: '✅',
-    box: 'bg-emerald-50 ring-emerald-200',
-    text: 'text-emerald-800',
-    muted: 'text-emerald-700',
-    button: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200',
-    close: 'text-emerald-600 hover:bg-emerald-100',
+    box: 'bg-warm-success/10 ring-warm-success/30',
+    text: 'text-warm-success',
+    muted: 'text-warm-success',
+    button: 'bg-warm-success/15 text-warm-success hover:bg-warm-success/25',
+    close: 'text-warm-success hover:bg-warm-success/15',
     role: 'status' as const,
   },
   error: {

@@ -63,7 +63,7 @@ export default function TableQrModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="qr-meja-title"
@@ -75,19 +75,19 @@ export default function TableQrModal({
         className="absolute inset-0 cursor-default"
       />
 
-      <div className="relative max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-slate-50 p-5 shadow-2xl sm:rounded-3xl">
+      <div className="relative max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-warm-cream p-5 shadow-2xl sm:rounded-3xl">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 id="qr-meja-title" className="text-lg font-bold text-slate-900">
+            <h2 id="qr-meja-title" className="text-lg font-bold text-warm-espresso">
               QR {table.tableName}
             </h2>
-            <p className="text-sm text-slate-500">{cafeName}</p>
+            <p className="text-sm text-warm-muted">{cafeName}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Tutup"
-            className="rounded-full p-1.5 text-slate-400 transition hover:bg-slate-200"
+            className="rounded-full p-1.5 text-warm-muted transition hover:bg-warm-espresso/10"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -95,7 +95,8 @@ export default function TableQrModal({
           </button>
         </div>
 
-        <div className="flex flex-col items-center rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        {/* Kartu QR tetap berlatar putih agar kontras pemindaian maksimal. */}
+        <div className="flex flex-col items-center rounded-2xl bg-white p-5 shadow-sm ring-1 ring-warm-line">
           {preview ? (
             <img
               src={preview}
@@ -105,17 +106,17 @@ export default function TableQrModal({
               className="h-auto w-full max-w-[320px]"
             />
           ) : (
-            <div className="flex aspect-square w-full max-w-[320px] items-center justify-center rounded-xl bg-slate-100 text-sm text-slate-400">
+            <div className="flex aspect-square w-full max-w-[320px] items-center justify-center rounded-xl bg-warm-espresso/5 text-sm text-warm-muted">
               Membuat QR…
             </div>
           )}
 
-          <p className="mt-3 text-center text-sm text-slate-500">
+          <p className="mt-3 text-center text-sm text-warm-muted">
             Pelanggan memindai QR ini untuk membuka menu {table.tableName}.
           </p>
         </div>
 
-        <label htmlFor="qr-url" className="mt-4 mb-1 block text-sm font-medium text-slate-700">
+        <label htmlFor="qr-url" className="mt-4 mb-1 block text-sm font-medium text-warm-subtle">
           Tautan di dalam QR
         </label>
         <div className="flex gap-2">
@@ -124,12 +125,12 @@ export default function TableQrModal({
             readOnly
             value={url}
             onFocus={(event) => event.target.select()}
-            className="w-full rounded-xl border-0 bg-white px-3.5 py-2.5 font-mono text-xs text-slate-600 shadow-sm ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full rounded-xl border-0 bg-warm-paper px-3.5 py-2.5 font-mono text-xs text-warm-subtle shadow-sm ring-1 ring-warm-line focus:outline-none focus:ring-2 focus:ring-warm-amber"
           />
           <button
             type="button"
             onClick={handleCopy}
-            className="shrink-0 rounded-xl bg-slate-200 px-3.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-300"
+            className="shrink-0 rounded-xl bg-warm-espresso/10 px-3.5 text-sm font-semibold text-warm-subtle transition hover:bg-warm-espresso/20"
           >
             {copied ? 'Tersalin' : 'Salin'}
           </button>
@@ -141,7 +142,7 @@ export default function TableQrModal({
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 rounded-2xl bg-slate-200 py-3 font-semibold text-slate-600 transition hover:bg-slate-300"
+            className="flex-1 rounded-2xl bg-warm-espresso/10 py-3 font-semibold text-warm-subtle transition hover:bg-warm-espresso/20"
           >
             Tutup
           </button>
@@ -149,7 +150,7 @@ export default function TableQrModal({
             type="button"
             onClick={handleDownload}
             disabled={downloading}
-            className="flex-1 rounded-2xl bg-brand-600 py-3 font-semibold text-white shadow-sm transition hover:bg-brand-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="flex-1 rounded-2xl bg-warm-amber py-3 font-semibold text-white shadow-sm transition hover:brightness-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-warm-line disabled:text-warm-muted"
           >
             {downloading ? 'Menyiapkan…' : 'Unduh PNG'}
           </button>

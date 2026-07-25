@@ -93,11 +93,11 @@ export default function CategoryManagerModal({
   };
 
   const inputClass =
-    'w-full rounded-xl border-0 bg-white px-3.5 py-2.5 text-sm text-slate-800 shadow-sm ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500';
+    'w-full rounded-xl border-0 bg-warm-paper px-3.5 py-2.5 text-sm text-warm-espresso shadow-sm ring-1 ring-warm-line focus:outline-none focus:ring-2 focus:ring-warm-amber';
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="kelola-kategori-title"
@@ -109,13 +109,13 @@ export default function CategoryManagerModal({
         className="absolute inset-0 cursor-default"
       />
 
-      <div className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-slate-50 p-5 shadow-2xl sm:rounded-3xl">
+      <div className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-warm-cream p-5 shadow-2xl sm:rounded-3xl">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 id="kelola-kategori-title" className="text-lg font-bold text-slate-900">
+            <h2 id="kelola-kategori-title" className="text-lg font-bold text-warm-espresso">
               Kelola Kategori
             </h2>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-warm-muted">
               Urutan di sini menentukan urutan tampil di menu pelanggan.
             </p>
           </div>
@@ -123,7 +123,7 @@ export default function CategoryManagerModal({
             type="button"
             onClick={onClose}
             aria-label="Tutup"
-            className="rounded-full p-1.5 text-slate-400 transition hover:bg-slate-200"
+            className="rounded-full p-1.5 text-warm-muted transition hover:bg-warm-espresso/10"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -133,7 +133,7 @@ export default function CategoryManagerModal({
 
         {/* Daftar kategori */}
         {categories.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-4 py-8 text-center text-sm text-slate-500">
+          <p className="rounded-2xl border border-dashed border-warm-line bg-warm-paper/60 px-4 py-8 text-center text-sm text-warm-muted">
             Belum ada kategori. Tambahkan yang pertama di bawah.
           </p>
         ) : (
@@ -146,7 +146,7 @@ export default function CategoryManagerModal({
               return (
                 <li
                   key={category.id}
-                  className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200"
+                  className="rounded-2xl bg-warm-paper p-3 shadow-sm ring-1 ring-warm-line"
                 >
                   {isEditing ? (
                     <div>
@@ -169,14 +169,14 @@ export default function CategoryManagerModal({
                           <button
                             type="button"
                             onClick={saveEditing}
-                            className="flex-1 shrink-0 rounded-xl bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-brand-700 sm:flex-none sm:py-0"
+                            className="flex-1 shrink-0 rounded-xl bg-warm-amber px-3.5 py-2 text-sm font-semibold text-white transition hover:brightness-95 sm:flex-none sm:py-0"
                           >
                             Simpan
                           </button>
                           <button
                             type="button"
                             onClick={() => setEditingId(null)}
-                            className="flex-1 shrink-0 rounded-xl bg-slate-200 px-3.5 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-300 sm:flex-none sm:py-0"
+                            className="flex-1 shrink-0 rounded-xl bg-warm-espresso/10 px-3.5 py-2 text-sm font-semibold text-warm-subtle transition hover:bg-warm-espresso/20 sm:flex-none sm:py-0"
                           >
                             Batal
                           </button>
@@ -188,7 +188,7 @@ export default function CategoryManagerModal({
                     </div>
                   ) : isConfirming ? (
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm text-slate-700">
+                      <p className="text-sm text-warm-subtle">
                         Hapus kategori{' '}
                         <span className="font-semibold">{category.name}</span>?
                       </p>
@@ -196,7 +196,7 @@ export default function CategoryManagerModal({
                         <button
                           type="button"
                           onClick={() => setConfirmId(null)}
-                          className="rounded-lg bg-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-300"
+                          className="rounded-lg bg-warm-espresso/10 px-3 py-1.5 text-sm font-semibold text-warm-subtle transition hover:bg-warm-espresso/20"
                         >
                           Batal
                         </button>
@@ -221,7 +221,7 @@ export default function CategoryManagerModal({
                           disabled={index === 0}
                           onClick={() => onReorder(category.id, 'up')}
                           aria-label={`Naikkan urutan ${category.name}`}
-                          className="rounded-md px-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:text-slate-200 disabled:hover:bg-transparent"
+                          className="rounded-md px-1 text-warm-muted transition hover:bg-warm-espresso/5 hover:text-warm-subtle disabled:cursor-not-allowed disabled:text-warm-line disabled:hover:bg-transparent"
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <path d="m6 15 6-6 6 6" />
@@ -232,7 +232,7 @@ export default function CategoryManagerModal({
                           disabled={index === categories.length - 1}
                           onClick={() => onReorder(category.id, 'down')}
                           aria-label={`Turunkan urutan ${category.name}`}
-                          className="rounded-md px-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:text-slate-200 disabled:hover:bg-transparent"
+                          className="rounded-md px-1 text-warm-muted transition hover:bg-warm-espresso/5 hover:text-warm-subtle disabled:cursor-not-allowed disabled:text-warm-line disabled:hover:bg-transparent"
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <path d="m6 9 6 6 6-6" />
@@ -240,15 +240,15 @@ export default function CategoryManagerModal({
                         </button>
                       </div>
 
-                      <span className="hidden w-5 shrink-0 text-center text-sm font-bold tabular-nums text-slate-300 sm:block">
+                      <span className="hidden w-5 shrink-0 text-center text-sm font-bold tabular-nums text-warm-line sm:block">
                         {index + 1}
                       </span>
 
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-semibold text-slate-800">
+                        <p className="truncate font-semibold text-warm-espresso">
                           {category.name}
                         </p>
-                        <p className="text-xs text-slate-500">
+                        <p className="text-xs text-warm-muted">
                           {category.items.length} item
                         </p>
                       </div>
@@ -256,7 +256,7 @@ export default function CategoryManagerModal({
                       <button
                         type="button"
                         onClick={() => startEditing(category.id, category.name)}
-                        className="rounded-lg px-2.5 py-1.5 text-sm font-semibold text-slate-500 transition hover:bg-brand-50 hover:text-brand-700"
+                        className="rounded-lg px-2.5 py-1.5 text-sm font-semibold text-warm-muted transition hover:bg-warm-amber/10 hover:text-warm-amber"
                       >
                         Ubah
                       </button>
@@ -270,7 +270,7 @@ export default function CategoryManagerModal({
                             ? 'Pindahkan atau hapus itemnya dulu sebelum kategori ini bisa dihapus.'
                             : undefined
                         }
-                        className="rounded-lg px-2.5 py-1.5 text-sm font-semibold text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                        className="rounded-lg px-2.5 py-1.5 text-sm font-semibold text-warm-muted transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:text-warm-line disabled:hover:bg-transparent"
                       >
                         Hapus
                       </button>
@@ -283,10 +283,10 @@ export default function CategoryManagerModal({
         )}
 
         {/* Tambah kategori */}
-        <form onSubmit={handleAdd} className="mt-4 border-t border-slate-200 pt-4">
+        <form onSubmit={handleAdd} className="mt-4 border-t border-warm-line pt-4">
           <label
             htmlFor="kategori-baru"
-            className="mb-1 block text-sm font-medium text-slate-700"
+            className="mb-1 block text-sm font-medium text-warm-subtle"
           >
             Tambah kategori
           </label>
@@ -300,7 +300,7 @@ export default function CategoryManagerModal({
             />
             <button
               type="submit"
-              className="shrink-0 rounded-xl bg-brand-600 px-4 text-sm font-semibold text-white transition hover:bg-brand-700"
+              className="shrink-0 rounded-xl bg-warm-amber px-4 text-sm font-semibold text-white transition hover:brightness-95"
             >
               Tambah
             </button>
@@ -311,7 +311,7 @@ export default function CategoryManagerModal({
         <button
           type="button"
           onClick={onClose}
-          className="mt-5 w-full rounded-2xl bg-slate-200 py-3 font-semibold text-slate-600 transition hover:bg-slate-300"
+          className="mt-5 w-full rounded-2xl bg-warm-espresso/10 py-3 font-semibold text-warm-subtle transition hover:bg-warm-espresso/20"
         >
           Selesai
         </button>

@@ -15,12 +15,12 @@ interface TableStatusMeta {
 export const TABLE_STATUS_META: Record<TableStatus, TableStatusMeta> = {
   KOSONG: {
     label: 'Kosong',
-    badgeClass: 'bg-slate-100 text-slate-500',
-    dotClass: 'bg-slate-400',
+    badgeClass: 'bg-warm-espresso/5 text-warm-muted',
+    dotClass: 'bg-warm-muted',
   },
   DIGUNAKAN: {
     label: 'Digunakan',
-    badgeClass: 'bg-emerald-50 text-emerald-700',
-    dotClass: 'bg-emerald-500',
+    badgeClass: 'bg-warm-success/10 text-warm-success',
+    dotClass: 'bg-warm-success',
   },
 };

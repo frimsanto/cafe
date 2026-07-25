@@ -114,17 +114,17 @@ export default function MenuItemFormModal({
   };
 
   const fieldClass = (invalid: boolean) =>
-    `w-full rounded-xl border-0 bg-white px-3.5 py-2.5 text-sm text-slate-800 shadow-sm ring-1 focus:outline-none focus:ring-2 ${
+    `w-full rounded-xl border-0 bg-warm-paper px-3.5 py-2.5 text-sm text-warm-espresso shadow-sm ring-1 focus:outline-none focus:ring-2 ${
       invalid
         ? 'ring-rose-400 focus:ring-rose-500'
-        : 'ring-slate-200 focus:ring-brand-500'
+        : 'ring-warm-line focus:ring-warm-amber'
     }`;
 
   const noCategory = categories.length === 0;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-warm-espresso/40 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="form-item-title"
@@ -139,14 +139,14 @@ export default function MenuItemFormModal({
 
       <form
         onSubmit={handleSubmit}
-        className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-slate-50 p-5 shadow-2xl sm:rounded-3xl"
+        className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-warm-cream p-5 shadow-2xl sm:rounded-3xl"
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 id="form-item-title" className="text-lg font-bold text-slate-900">
+            <h2 id="form-item-title" className="text-lg font-bold text-warm-espresso">
               {isEdit ? 'Ubah Item Menu' : 'Tambah Item Menu'}
             </h2>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-warm-muted">
               {isEdit
                 ? 'Perubahan langsung terlihat di menu digital pelanggan.'
                 : 'Item baru langsung tampil di menu digital pelanggan.'}
@@ -156,7 +156,7 @@ export default function MenuItemFormModal({
             type="button"
             onClick={onClose}
             aria-label="Tutup"
-            className="rounded-full p-1.5 text-slate-400 transition hover:bg-slate-200"
+            className="rounded-full p-1.5 text-warm-muted transition hover:bg-warm-espresso/10"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -172,7 +172,7 @@ export default function MenuItemFormModal({
 
         <div className="space-y-4">
           <div>
-            <label htmlFor="item-name" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="item-name" className="mb-1 block text-sm font-medium text-warm-subtle">
               Nama menu <span className="text-rose-500">*</span>
             </label>
             <input
@@ -194,7 +194,7 @@ export default function MenuItemFormModal({
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="item-category" className="mb-1 block text-sm font-medium text-slate-700">
+              <label htmlFor="item-category" className="mb-1 block text-sm font-medium text-warm-subtle">
                 Kategori <span className="text-rose-500">*</span>
               </label>
               <select
@@ -204,7 +204,7 @@ export default function MenuItemFormModal({
                 onChange={(event) => setCategoryId(event.target.value)}
                 disabled={noCategory}
                 aria-invalid={Boolean(errors.categoryId)}
-                className={`${fieldClass(Boolean(errors.categoryId))} disabled:bg-slate-100 disabled:text-slate-400`}
+                className={`${fieldClass(Boolean(errors.categoryId))} disabled:bg-warm-espresso/5 disabled:text-warm-muted`}
               >
                 {noCategory && <option value="">— belum ada kategori —</option>}
                 {categories.map((category) => (
@@ -219,11 +219,11 @@ export default function MenuItemFormModal({
             </div>
 
             <div>
-              <label htmlFor="item-price" className="mb-1 block text-sm font-medium text-slate-700">
+              <label htmlFor="item-price" className="mb-1 block text-sm font-medium text-warm-subtle">
                 Harga <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
-                <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-warm-muted">
                   Rp
                 </span>
                 <input
@@ -244,7 +244,7 @@ export default function MenuItemFormModal({
           </div>
 
           <div>
-            <label htmlFor="item-description" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="item-description" className="mb-1 block text-sm font-medium text-warm-subtle">
               Deskripsi
             </label>
             <textarea
@@ -256,13 +256,13 @@ export default function MenuItemFormModal({
               placeholder="Ceritakan singkat isi menunya…"
               className={`${fieldClass(false)} resize-none`}
             />
-            <p className="mt-1 text-right text-xs text-slate-400">
+            <p className="mt-1 text-right text-xs text-warm-muted">
               {description.length}/{MAX_DESCRIPTION}
             </p>
           </div>
 
           <div>
-            <label htmlFor="item-image" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="item-image" className="mb-1 block text-sm font-medium text-warm-subtle">
               URL foto
             </label>
             <div className="flex items-center gap-3">
@@ -279,17 +279,17 @@ export default function MenuItemFormModal({
                 className={fieldClass(false)}
               />
             </div>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-warm-muted">
               Kosongkan untuk memakai gambar awal otomatis.
             </p>
           </div>
 
-          <label className="flex cursor-pointer items-center justify-between rounded-xl bg-white px-3.5 py-3 shadow-sm ring-1 ring-slate-200">
+          <label className="flex cursor-pointer items-center justify-between rounded-xl bg-warm-paper px-3.5 py-3 shadow-sm ring-1 ring-warm-line">
             <span>
-              <span className="block text-sm font-medium text-slate-700">
+              <span className="block text-sm font-medium text-warm-subtle">
                 Bisa dipesan pelanggan
               </span>
-              <span className="block text-xs text-slate-400">
+              <span className="block text-xs text-warm-muted">
                 Matikan bila stok habis — item tetap terlihat, ditandai “Habis”.
               </span>
             </span>
@@ -297,7 +297,7 @@ export default function MenuItemFormModal({
               type="checkbox"
               checked={isAvailable}
               onChange={(event) => setIsAvailable(event.target.checked)}
-              className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+              className="h-5 w-5 rounded border-warm-line accent-warm-amber focus:ring-warm-amber"
             />
           </label>
         </div>
@@ -306,14 +306,14 @@ export default function MenuItemFormModal({
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 rounded-2xl bg-slate-200 py-3 font-semibold text-slate-600 transition hover:bg-slate-300"
+            className="flex-1 rounded-2xl bg-warm-espresso/10 py-3 font-semibold text-warm-subtle transition hover:bg-warm-espresso/20"
           >
             Batal
           </button>
           <button
             type="submit"
             disabled={noCategory}
-            className="flex-1 rounded-2xl bg-brand-600 py-3 font-semibold text-white shadow-sm transition hover:bg-brand-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="flex-1 rounded-2xl bg-warm-amber py-3 font-semibold text-white shadow-sm transition hover:brightness-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-warm-line disabled:text-warm-muted"
           >
             {isEdit ? 'Simpan Perubahan' : 'Simpan Item'}
           </button>

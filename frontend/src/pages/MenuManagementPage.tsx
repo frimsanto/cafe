@@ -164,7 +164,7 @@ export default function MenuManagementPage() {
             type="button"
             onClick={() => setCategoryManagerOpen(true)}
             aria-label="Kelola kategori"
-            className="flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-2 text-sm font-semibold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-50 sm:px-3"
+            className="flex items-center gap-1.5 rounded-lg bg-warm-paper px-2.5 py-2 text-sm font-semibold text-warm-subtle ring-1 ring-warm-line transition hover:bg-warm-espresso/5 sm:px-3"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3Z" />
@@ -175,7 +175,7 @@ export default function MenuManagementPage() {
           <button
             type="button"
             onClick={() => setForm('add')}
-            className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700"
+            className="flex items-center gap-1.5 rounded-lg bg-warm-amber px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <path d="M12 5v14M5 12h14" />
@@ -190,10 +190,10 @@ export default function MenuManagementPage() {
         {noticeItem && savedItem && (
           <div
             role="status"
-            className="flex items-start gap-3 rounded-2xl bg-emerald-50 px-4 py-3 ring-1 ring-emerald-200"
+            className="flex items-start gap-3 rounded-2xl bg-warm-success/10 px-4 py-3 ring-1 ring-warm-success/30"
           >
             <span className="text-lg">✅</span>
-            <p className="flex-1 text-sm text-emerald-800">
+            <p className="flex-1 text-sm text-warm-success">
               <span className="font-semibold">{noticeItem.name}</span>{' '}
               {noticeText(
                 savedItem.action,
@@ -204,7 +204,7 @@ export default function MenuManagementPage() {
               type="button"
               onClick={() => setSavedItem(null)}
               aria-label="Tutup notifikasi"
-              className="rounded-full p-1 text-emerald-600 transition hover:bg-emerald-100"
+              className="rounded-full p-1 text-warm-success transition hover:bg-warm-success/10"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M18 6 6 18M6 6l12 12" />
@@ -226,30 +226,30 @@ export default function MenuManagementPage() {
         />
 
         {stats.itemCount === 0 && stats.categoryCount === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-20 text-center">
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-warm-line bg-warm-paper/60 px-6 py-20 text-center">
             <span className="text-4xl">🍽️</span>
-            <h2 className="mt-3 text-lg font-semibold text-slate-700">
+            <h2 className="mt-3 text-lg font-semibold text-warm-espresso">
               Menu masih kosong
             </h2>
-            <p className="mt-1 max-w-sm text-sm text-slate-500">
+            <p className="mt-1 max-w-sm text-sm text-warm-muted">
               Kafe {user.cafeName} belum punya kategori maupun item menu. Menu yang
               kamu tambahkan hanya akan terlihat oleh kafemu sendiri.
             </p>
             <button
               type="button"
               onClick={() => setCategoryManagerOpen(true)}
-              className="mt-4 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700"
+              className="mt-4 rounded-xl bg-warm-amber px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-95"
             >
               Buat kategori pertama
             </button>
           </div>
         ) : matchCount === 0 && isFiltering ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-16 text-center">
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-warm-line bg-warm-paper/60 px-6 py-16 text-center">
             <span className="text-3xl">🔍</span>
-            <h2 className="mt-3 font-semibold text-slate-700">
+            <h2 className="mt-3 font-semibold text-warm-espresso">
               Tidak ada menu yang cocok
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-warm-muted">
               Coba kata kunci lain atau pilih kategori “Semua”.
             </p>
             <button
@@ -258,7 +258,7 @@ export default function MenuManagementPage() {
                 setQuery('');
                 setActiveCategoryId(ALL_CATEGORIES);
               }}
-              className="mt-4 rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-200"
+              className="mt-4 rounded-lg bg-warm-espresso/5 px-4 py-2 text-sm font-semibold text-warm-subtle transition hover:bg-warm-espresso/10"
             >
               Reset pencarian
             </button>
@@ -266,22 +266,22 @@ export default function MenuManagementPage() {
         ) : (
           <div className="space-y-6">
             {isFiltering && (
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-warm-muted">
                 Menampilkan {matchCount} dari {stats.itemCount} item.
               </p>
             )}
 
             {visibleCategories.map((category) => (
               <section key={category.id}>
-                <h2 className="mb-3 flex items-center gap-2 text-base font-bold text-slate-800">
+                <h2 className="mb-3 flex items-center gap-2 text-base font-bold text-warm-espresso">
                   {category.name}
-                  <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-500">
+                  <span className="rounded-full bg-warm-espresso/5 px-2 py-0.5 text-xs font-medium text-warm-muted">
                     {category.items.length}
                   </span>
                 </h2>
 
                 {category.items.length === 0 ? (
-                  <p className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-4 py-6 text-center text-sm text-slate-500">
+                  <p className="rounded-2xl border border-dashed border-warm-line bg-warm-paper/60 px-4 py-6 text-center text-sm text-warm-muted">
                     Belum ada item pada kategori ini.
                   </p>
                 ) : (

@@ -31,52 +31,52 @@ export default function PendingOrderCard({
 
   return (
     <article
-      className={`flex flex-col rounded-2xl bg-white shadow-sm ring-1 transition ${
-        stale ? 'ring-2 ring-amber-400' : 'ring-slate-200'
+      className={`flex flex-col rounded-2xl bg-warm-paper shadow-sm ring-1 transition ${
+        stale ? 'ring-2 ring-warm-amber' : 'ring-warm-line'
       }`}
     >
-      <header className="flex items-start justify-between gap-2 border-b border-slate-100 p-4">
+      <header className="flex items-start justify-between gap-2 border-b border-warm-line p-4">
         <div className="min-w-0">
-          <h2 className="truncate text-lg font-bold text-slate-900">
+          <h2 className="truncate text-lg font-bold text-warm-espresso">
             {order.tableName}
           </h2>
-          <p className="font-mono text-xs text-slate-400">{order.id}</p>
+          <p className="font-mono text-xs text-warm-muted">{order.id}</p>
         </div>
         <span
           className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
-            stale ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'
+            stale ? 'bg-warm-amber/15 text-warm-subtle' : 'bg-warm-espresso/5 text-warm-muted'
           }`}
         >
           ⏱ {elapsedLabel(order.createdAt, now)}
         </span>
       </header>
 
-      <ul className="flex-1 divide-y divide-slate-100 px-4">
+      <ul className="flex-1 divide-y divide-warm-line px-4">
         {order.items.map((item) => (
           <li key={item.id} className="flex justify-between gap-3 py-2.5">
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-slate-800">
-                <span className="text-brand-700">{item.quantity}×</span> {item.name}
+              <p className="truncate text-sm font-medium text-warm-espresso">
+                <span className="text-warm-amber">{item.quantity}×</span> {item.name}
               </p>
               {item.notes && (
-                <p className="truncate text-xs italic text-slate-400">
+                <p className="truncate text-xs italic text-warm-muted">
                   “{item.notes}”
                 </p>
               )}
             </div>
-            <span className="shrink-0 text-sm font-medium text-slate-600 tabular-nums">
+            <span className="shrink-0 text-sm font-medium text-warm-subtle tabular-nums">
               {formatRupiah(item.price * item.quantity)}
             </span>
           </li>
         ))}
       </ul>
 
-      <div className="border-t border-slate-100 p-4">
+      <div className="border-t border-warm-line p-4">
         <div className="mb-3 flex items-end justify-between">
-          <span className="text-sm text-slate-500">
+          <span className="text-sm text-warm-muted">
             Total · {itemCount} item
           </span>
-          <span className="text-xl font-bold text-slate-900 tabular-nums">
+          <span className="text-xl font-bold text-warm-espresso tabular-nums">
             {formatRupiah(order.totalAmount)}
           </span>
         </div>
@@ -84,7 +84,7 @@ export default function PendingOrderCard({
         <button
           type="button"
           onClick={() => onPay(order)}
-          className="w-full rounded-xl bg-brand-600 py-2.5 text-sm font-bold text-white transition hover:bg-brand-700 active:scale-95"
+          className="w-full rounded-xl bg-warm-amber py-2.5 text-sm font-bold text-white transition hover:brightness-95 active:scale-95"
         >
           Terima Pembayaran
         </button>

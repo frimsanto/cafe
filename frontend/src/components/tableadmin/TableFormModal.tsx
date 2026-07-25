@@ -68,7 +68,7 @@ export default function TableFormModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="form-meja-title"
@@ -82,14 +82,14 @@ export default function TableFormModal({
 
       <form
         onSubmit={handleSubmit}
-        className="relative w-full max-w-md rounded-t-3xl bg-slate-50 p-5 shadow-2xl sm:rounded-3xl"
+        className="relative w-full max-w-md rounded-t-3xl bg-warm-cream p-5 shadow-2xl sm:rounded-3xl"
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 id="form-meja-title" className="text-lg font-bold text-slate-900">
+            <h2 id="form-meja-title" className="text-lg font-bold text-warm-espresso">
               Tambah Meja
             </h2>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-warm-muted">
               QR code meja dibuat otomatis setelah meja tersimpan.
             </p>
           </div>
@@ -97,7 +97,7 @@ export default function TableFormModal({
             type="button"
             onClick={onClose}
             aria-label="Tutup"
-            className="rounded-full p-1.5 text-slate-400 transition hover:bg-slate-200"
+            className="rounded-full p-1.5 text-warm-muted transition hover:bg-warm-espresso/10"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -105,7 +105,7 @@ export default function TableFormModal({
           </button>
         </div>
 
-        <label htmlFor="nama-meja" className="mb-1 block text-sm font-medium text-slate-700">
+        <label htmlFor="nama-meja" className="mb-1 block text-sm font-medium text-warm-subtle">
           Nama meja <span className="text-rose-500">*</span>
         </label>
         <input
@@ -119,10 +119,10 @@ export default function TableFormModal({
           placeholder="mis. Meja 15 atau Bar 1"
           aria-invalid={Boolean(error)}
           aria-describedby={error ? 'nama-meja-error' : undefined}
-          className={`w-full rounded-xl border-0 bg-white px-3.5 py-2.5 text-sm text-slate-800 shadow-sm ring-1 focus:outline-none focus:ring-2 ${
+          className={`w-full rounded-xl border-0 bg-warm-paper px-3.5 py-2.5 text-sm text-warm-espresso shadow-sm ring-1 focus:outline-none focus:ring-2 ${
             error
               ? 'ring-rose-400 focus:ring-rose-500'
-              : 'ring-slate-200 focus:ring-brand-500'
+              : 'ring-warm-line focus:ring-warm-amber'
           }`}
         />
         {error ? (
@@ -130,7 +130,7 @@ export default function TableFormModal({
             {error}
           </p>
         ) : (
-          <p className="mt-1 text-xs text-slate-400">
+          <p className="mt-1 text-xs text-warm-muted">
             Nama ini muncul di struk, layar dapur, dan halaman kasir.
           </p>
         )}
@@ -140,14 +140,14 @@ export default function TableFormModal({
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="flex-1 rounded-2xl bg-slate-200 py-3 font-semibold text-slate-600 transition hover:bg-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex-1 rounded-2xl bg-warm-espresso/10 py-3 font-semibold text-warm-subtle transition hover:bg-warm-espresso/20 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Batal
           </button>
           <button
             type="submit"
             disabled={saving}
-            className="flex-1 rounded-2xl bg-brand-600 py-3 font-semibold text-white shadow-sm transition hover:bg-brand-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="flex-1 rounded-2xl bg-warm-amber py-3 font-semibold text-white shadow-sm transition hover:brightness-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-warm-line disabled:text-warm-muted"
           >
             {saving ? 'Menyimpan…' : 'Simpan Meja'}
           </button>
