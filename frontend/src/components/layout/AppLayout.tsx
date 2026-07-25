@@ -426,7 +426,7 @@ export default function AppLayout({
   return (
     <div className="min-h-screen bg-warm-cream">
       <aside
-        className="fixed inset-y-0 left-0 z-30 hidden w-[60px] lg:block"
+        className="fixed inset-y-0 left-0 z-30 hidden w-[60px] md:block"
         style={{
           backgroundColor: 'rgba(26,18,8,0.05)',
           borderRight: '1px solid rgba(26,18,8,0.08)',
@@ -436,7 +436,7 @@ export default function AppLayout({
       </aside>
 
       {navOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
+        <div className="fixed inset-0 z-40 md:hidden">
           <button
             type="button"
             aria-label="Tutup menu"
@@ -447,7 +447,7 @@ export default function AppLayout({
         </div>
       )}
 
-      <div className="lg:pl-[60px]">
+      <div className="md:pl-[60px]">
         <header
           className="sticky top-0 z-30 backdrop-blur"
           style={{
@@ -460,7 +460,7 @@ export default function AppLayout({
               type="button"
               onClick={() => setNavOpen(true)}
               aria-label="Buka menu"
-              className="rounded-lg p-2 text-warm-subtle transition hover:bg-warm-espresso/5 lg:hidden"
+              className="rounded-lg p-2 text-warm-subtle transition hover:bg-warm-espresso/5 md:hidden"
             >
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M3 6h18M3 12h18M3 18h18" />
