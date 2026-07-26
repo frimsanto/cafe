@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { PaymentMethodCode } from '../types/order';
+import type { ManualMethodCode } from '../types/order';
 import type { CashierOrderDTO } from '../types/api';
 import { cashierApi } from '../api/orders';
+import { pembayaranApi } from '../api/pembayaran';
 import { describeApiError } from '../lib/apiClient';
 import { subscribeRealtime } from '../lib/realtime';
+
+/** Fallback polling antrean (mis. status Midtrans berubah tanpa event WS). */
+const POLL_MS = 5_000;
 
 export interface CashierOrders {
   /** Pesanan yang menunggu pembayaran, terlama di urutan pertama (FIFO). */
@@ -14,12 +18,16 @@ export interface CashierOrders {
   error: string | null;
   reload: () => void;
   /**
-   * Tandai satu pesanan lunas lewat API kasir. Backend yang mencatat
-   * pembayaran, memindahkan pesanan ke DIPROSES_DAPUR, dan menyiarkannya ke
-   * Layar Dapur — klien tidak lagi merilis sendiri. Mengembalikan pesanan
-   * versi terbayar untuk struk & notifikasi.
+   * Konfirmasi pembayaran manual lewat jalur pembayaran baru. Backend mencatat
+   * bukti, memindahkan pesanan ke dapur, dan menyiarkannya. Mengembalikan
+   * pesanan versi terbayar untuk struk & notifikasi.
    */
-  markPaid: (orderId: string, method: PaymentMethodCode) => Promise<CashierOrderDTO>;
+  markPaidManual: (
+    orderId: string,
+    metode: ManualMethodCode,
+    nominal: number,
+    catatan: string | null,
+  ) => Promise<CashierOrderDTO>;
 }
 
 /**
@@ -76,6 +84,14 @@ export function useCashierOrders(cafeId: string): CashierOrders {
     });
   }, [cafeId, reload]);
 
+  // Fallback polling: menangkap perubahan status pembayaran (mis. Midtrans GAGAL)
+  // yang tidak memancarkan event WebSocket khusus.
+  useEffect(() => {
+    if (!cafeId) return;
+    const id = setInterval(reload, POLL_MS);
+    return () => clearInterval(id);
+  }, [cafeId, reload]);
+
   const pending = useMemo(
     () =>
       [...orders].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)),
@@ -84,16 +100,26 @@ export function useCashierOrders(cafeId: string): CashierOrders {
 
   const totalPending = pending.reduce((sum, order) => sum + order.totalAmount, 0);
 
-  const markPaid = useCallback(
-    async (orderId: string, method: PaymentMethodCode): Promise<CashierOrderDTO> => {
-      const paid = await cashierApi.confirmPayment(cafeId, orderId, method);
+  const markPaidManual = useCallback(
+    async (
+      orderId: string,
+      metode: ManualMethodCode,
+      nominal: number,
+      catatan: string | null,
+    ): Promise<CashierOrderDTO> => {
+      const paid = await pembayaranApi.konfirmasiManual({
+        orderId,
+        metode,
+        nominal,
+        catatanKasir: catatan ?? undefined,
+      });
       // Keluarkan dari antrean seketika; siaran realtime menyusul untuk
       // perangkat lain.
       setOrders((prev) => prev.filter((order) => order.id !== orderId));
       return paid;
     },
-    [cafeId],
+    [],
   );
 
-  return { pending, totalPending, loading, error, reload, markPaid };
+  return { pending, totalPending, loading, error, reload, markPaidManual };
 }

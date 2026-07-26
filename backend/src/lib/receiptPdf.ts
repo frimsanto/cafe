@@ -1,6 +1,14 @@
 import PDFDocument from 'pdfkit';
-import type { Cafe, Order, OrderItem, Payment, Table } from '@prisma/client';
+import type {
+  Cafe,
+  Order,
+  OrderItem,
+  Payment,
+  PembayaranManual,
+  Table,
+} from '@prisma/client';
 import { formatRupiah } from './money';
+import { labelMetode } from './paymentMethods';
 
 /** Order lengkap dengan relasi yang dibutuhkan struk. */
 export type ReceiptOrder = Order & {
@@ -8,14 +16,7 @@ export type ReceiptOrder = Order & {
   table: Table;
   items: OrderItem[];
   payment: Payment | null;
-};
-
-const METHOD_LABEL: Record<string, string> = {
-  QRIS: 'QRIS',
-  GOPAY: 'GoPay',
-  CARD: 'Kartu Kredit/Debit',
-  CASH: 'Tunai',
-  EDC: 'Kartu (EDC)',
+  pembayaranManual: PembayaranManual | null;
 };
 
 function formatDateTime(date: Date): string {
@@ -119,12 +120,29 @@ export function streamReceiptPdf(stream: NodeJS.WritableStream, order: ReceiptOr
   doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000');
   rowLR('TOTAL', formatRupiah(Number(order.totalAmount)));
   doc.font('Helvetica').fontSize(8).moveDown(0.2);
+
+  // Metode pembayaran akurat dari domain baru (kode manual / label Midtrans),
+  // jatuh ke enum lama; null → belum dibayar.
+  const metode = order.metodePembayaran
+    ? labelMetode(order.metodePembayaran)
+    : order.payment
+      ? labelMetode(order.payment.method)
+      : null;
+  rowLR('Metode Pembayaran', metode ?? 'Belum dibayar');
+
+  // Kembalian hanya untuk pembayaran tunai (nominal diterima > total).
+  if (order.pembayaranManual && order.pembayaranManual.metode === 'TUNAI') {
+    const kembalian = Number(order.pembayaranManual.nominal) - Number(order.totalAmount);
+    if (kembalian > 0) rowLR('Kembalian', formatRupiah(kembalian));
+  }
+
+  // ID Transaksi hanya bila lewat Midtrans.
+  if (order.midtransOrderId) {
+    rowLR('ID Transaksi', order.midtransOrderId);
+  }
+
   if (order.payment) {
-    rowLR('Metode', METHOD_LABEL[order.payment.method] ?? order.payment.method);
     rowLR('Status', order.payment.status === 'SUCCESS' ? 'LUNAS' : order.payment.status);
-    if (order.payment.transactionId) {
-      rowLR('ID Transaksi', order.payment.transactionId);
-    }
   }
   dashed();
 

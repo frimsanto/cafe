@@ -1,41 +1,37 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Navigate } from 'react-router-dom';
-import type { PaymentMethodCode } from '../types/order';
+import { Navigate, useNavigate } from 'react-router-dom';
+import type { ManualMethodCode } from '../types/order';
 import type { CashierOrderDTO } from '../types/api';
 import { useAuth } from '../auth/AuthContext';
 import { useCashierOrders } from '../hooks/useCashierOrders';
+import { usePaymentConfig } from '../hooks/usePaymentConfig';
+import { pembayaranApi } from '../api/pembayaran';
+import { payWithSnap } from '../lib/midtransSnap';
 import { describeApiError } from '../lib/apiClient';
 import { formatRupiah } from '../lib/format';
+import { labelMetode } from '../data/paymentMethods';
 import { downloadReceiptPdf } from '../lib/receipt';
 import AppLayout from '../components/layout/AppLayout';
 import AlertBanner from '../components/common/AlertBanner';
 import PendingOrderCard from '../components/cashier/PendingOrderCard';
-import CashierPaymentModal, {
-  type CashDetail,
-} from '../components/cashier/CashierPaymentModal';
+import PaymentModal, { type CashDetail } from '../components/cashier/PaymentModal';
 import PaymentSuccessModal from '../components/cashier/PaymentSuccessModal';
 import ReceiptPrintModal from '../components/cashier/ReceiptPrintModal';
 
-const METHOD_LABEL: Partial<Record<PaymentMethodCode, string>> = {
-  CASH: 'Tunai',
-  EDC: 'Kartu (EDC)',
-};
-
 /**
- * Halaman kasir: daftar pesanan yang menunggu pembayaran tunai/EDC.
+ * Halaman kasir: daftar pesanan yang menunggu pembayaran.
  *
- * Antrean diurutkan dari yang paling lama menunggu (FIFO) dan bisa disaring
- * lewat pencarian meja/nomor pesanan. Setelah kasir menandai lunas, pesanan
- * dianggap dirilis ke dapur — menegakkan aturan "pesanan hanya masuk dapur
- * setelah pembayaran dikonfirmasi".
- *
- * Antrean & konfirmasi pembayaran seluruhnya lewat API kasir; daftarnya ikut
- * diperbarui realtime agar dua kasir tidak menagih pesanan yang sama.
+ * Metode yang bisa dipilih mengikuti konfigurasi kafe (manual + Midtrans
+ * opsional). Setelah kasir menandai lunas, pesanan dianggap dirilis ke dapur —
+ * menegakkan aturan "pesanan hanya masuk dapur setelah pembayaran dikonfirmasi".
  */
 export default function CashierPage() {
   const { user } = useAuth();
-  const { pending, totalPending, loading, error, reload, markPaid } =
-    useCashierOrders(user?.cafeId ?? '');
+  const navigate = useNavigate();
+  const cafeId = user?.cafeId ?? '';
+  const { pending, totalPending, loading, error, reload, markPaidManual } =
+    useCashierOrders(cafeId);
+  const { config, error: configError } = usePaymentConfig(cafeId);
 
   const [query, setQuery] = useState('');
   /** Pesanan yang dialog pembayarannya sedang terbuka. */
@@ -53,11 +49,13 @@ export default function CashierPage() {
   const [printing, setPrinting] = useState(false);
   const [confirmation, setConfirmation] = useState<{
     tableName: string;
-    method: PaymentMethodCode;
+    metode: string;
   } | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
-  /** Kegagalan konfirmasi pembayaran — ditampilkan di dalam dialog. */
+  /** Kegagalan konfirmasi pembayaran — ditampilkan di dalam dialog / halaman. */
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  /** Permintaan pembayaran (manual/Midtrans) sedang diproses. */
+  const [paymentBusy, setPaymentBusy] = useState(false);
 
   // Satu jam bersama untuk seluruh kartu — label "lama menunggu" ikut berdetak.
   const [now, setNow] = useState(() => Date.now());
@@ -84,23 +82,53 @@ export default function CashierPage() {
 
   if (!user) return <Navigate to="/login" replace />;
 
-  const handleConfirmPayment = async (
-    method: PaymentMethodCode,
+  const handleManualConfirm = async (
+    metode: ManualMethodCode,
+    nominal: number,
+    catatan: string | null,
     cash: CashDetail | null,
   ) => {
     if (!payingOrder) return;
     setPaymentError(null);
-    const target = payingOrder;
+    setPaymentBusy(true);
     try {
-      // Backend yang mencatat pembayaran dan merilis pesanan ke dapur.
-      const paid = await markPaid(target.id, method);
+      const paid = await markPaidManual(payingOrder.id, metode, nominal, catatan);
       setPayingOrder(null);
       setPaidResult({ order: paid, cash });
-      setConfirmation({ tableName: paid.tableName, method });
-    } catch (error) {
-      // Modal dibiarkan terbuka agar kasir bisa langsung mencoba lagi tanpa
-      // kehilangan pilihan metode & nominal yang sudah diisi.
-      setPaymentError(describeApiError(error, 'Pembayaran gagal dikonfirmasi.'));
+      setConfirmation({ tableName: paid.tableName, metode });
+    } catch (err) {
+      // Modal dibiarkan terbuka agar kasir bisa langsung mencoba lagi.
+      setPaymentError(describeApiError(err, 'Pembayaran gagal dikonfirmasi.'));
+    } finally {
+      setPaymentBusy(false);
+    }
+  };
+
+  const handleMidtrans = async () => {
+    if (!payingOrder) return;
+    setPaymentError(null);
+    setPaymentBusy(true);
+    try {
+      const tx = await pembayaranApi.buatMidtrans(payingOrder.id);
+      if (!tx.clientKey) {
+        setPaymentError('Client Key Midtrans belum diisi di Pengaturan.');
+        return;
+      }
+      payWithSnap({
+        snapToken: tx.snapToken,
+        clientKey: tx.clientKey,
+        isProduction: tx.isProduction,
+        onSuccess: (r) => navigate(`/pembayaran/${r.order_id ?? tx.orderId}?status=sukses`),
+        onPending: (r) => navigate(`/pembayaran/${r.order_id ?? tx.orderId}?status=menunggu`),
+        onError: () => setPaymentError('Pembayaran gagal, coba lagi.'),
+        onClose: () => setPaymentError('Pembayaran dibatalkan.'),
+      });
+      // Popup Snap mengambil alih layar — tutup modal pemilihan.
+      setPayingOrder(null);
+    } catch (err) {
+      setPaymentError(describeApiError(err, 'Gagal membuat transaksi Midtrans.'));
+    } finally {
+      setPaymentBusy(false);
     }
   };
 
@@ -113,11 +141,15 @@ export default function CashierPage() {
     setPrinting(true);
     setPrintError(null);
     try {
-      await downloadReceiptPdf(receipt.order, {
-        id: receipt.order.cafeId,
-        name: user?.cafeName ?? 'CafeOS',
-        tagline: '',
-      });
+      await downloadReceiptPdf(
+        receipt.order,
+        {
+          id: receipt.order.cafeId,
+          name: user?.cafeName ?? 'CafeOS',
+          tagline: '',
+        },
+        receipt.cash,
+      );
     } catch {
       setPrintError('Struk PDF gagal dibuat. Coba lagi.');
     } finally {
@@ -131,8 +163,6 @@ export default function CashierPage() {
       subtitle={`${pending.length} pesanan menunggu · ${formatRupiah(totalPending)}`}
     >
       <div className="space-y-4">
-        {/* Gagal memuat antrean — jangan diam-diam tampil sebagai "tidak ada
-            pembayaran tertunda", karena artinya bertolak belakang. */}
         {!loading && error && (
           <AlertBanner
             tone="error"
@@ -143,7 +173,13 @@ export default function CashierPage() {
           </AlertBanner>
         )}
 
-        {paymentError && (
+        {configError && (
+          <AlertBanner tone="warning">
+            Konfigurasi pembayaran gagal dimuat — metode mungkin belum lengkap. {configError}
+          </AlertBanner>
+        )}
+
+        {paymentError && !payingOrder && (
           <AlertBanner tone="error" onClose={() => setPaymentError(null)}>
             {paymentError}
           </AlertBanner>
@@ -157,9 +193,8 @@ export default function CashierPage() {
 
         {confirmation && (
           <AlertBanner tone="success" onClose={() => setConfirmation(null)}>
-            {confirmation.tableName} ditandai lunas (
-            {METHOD_LABEL[confirmation.method] ?? confirmation.method}). Pesanan
-            dikirim ke dapur.
+            {confirmation.tableName} ditandai lunas ({labelMetode(confirmation.metode)}).
+            Pesanan dikirim ke dapur.
           </AlertBanner>
         )}
 
@@ -186,11 +221,7 @@ export default function CashierPage() {
           <div role="status" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <span className="sr-only">Memuat antrean kasir…</span>
             {Array.from({ length: 6 }, (_, index) => (
-              <div
-                key={index}
-                aria-hidden
-                className="skeleton-warm h-40 rounded-2xl"
-              />
+              <div key={index} aria-hidden className="skeleton-warm h-40 rounded-2xl" />
             ))}
           </div>
         ) : pending.length === 0 ? (
@@ -220,22 +251,24 @@ export default function CashierPage() {
         ) : (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
             {visible.map((order) => (
-              <PendingOrderCard
-                key={order.id}
-                order={order}
-                now={now}
-                onPay={setPayingOrder}
-              />
+              <PendingOrderCard key={order.id} order={order} now={now} onPay={setPayingOrder} />
             ))}
           </div>
         )}
       </div>
 
-      {payingOrder && (
-        <CashierPaymentModal
+      {payingOrder && config && (
+        <PaymentModal
           order={payingOrder}
-          onConfirm={handleConfirmPayment}
-          onClose={() => setPayingOrder(null)}
+          config={config}
+          busy={paymentBusy}
+          error={paymentError}
+          onManualConfirm={handleManualConfirm}
+          onMidtrans={() => void handleMidtrans()}
+          onClose={() => {
+            setPayingOrder(null);
+            setPaymentError(null);
+          }}
         />
       )}
 

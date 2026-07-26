@@ -17,6 +17,8 @@ import CafeMenuPage from './pages/CafeMenuPage';
 import MenuManagementPage from './pages/MenuManagementPage';
 import TableManagementPage from './pages/TableManagementPage';
 import CashierPage from './pages/CashierPage';
+import PaymentSettingsPage from './pages/PaymentSettingsPage';
+import PembayaranStatusPage from './pages/PembayaranStatusPage';
 
 /**
  * Pembungkus halaman pelanggan: mengambil token QR dari URL lalu
@@ -152,6 +154,22 @@ export default function App() {
               element={
                 <ProtectedRoute allow={['KASIR', 'OWNER']}>
                   <CashierPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dasbor/pembayaran"
+              element={
+                <ProtectedRoute allow={['OWNER']}>
+                  <PaymentSettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/pembayaran/:midtransOrderId"
+              element={
+                <ProtectedRoute allow={['KASIR', 'OWNER']}>
+                  <PembayaranStatusPage />
                 </ProtectedRoute>
               }
             />

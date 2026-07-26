@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { Order } from '../../types/order';
 import { formatRupiah } from '../../lib/format';
-import { cashierPaymentMethods } from '../../data/paymentMethods';
+import { labelMetode } from '../../data/paymentMethods';
 
 interface PaymentSuccessModalProps {
   order: Order;
@@ -36,12 +36,9 @@ export default function PaymentSuccessModal({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
-  // Modal ini hanya muncul setelah pembayaran sukses, jadi `payment` praktis
-  // selalu terisi — tetap dijaga agar tipe nullable dari API dihormati.
-  const methodName = order.payment
-    ? (cashierPaymentMethods.find((m) => m.code === order.payment!.method)?.name ??
-      order.payment.method)
-    : '-';
+  // Metode akurat dari domain baru (kode manual / label Midtrans), jatuh ke enum
+  // lama bila belum terisi.
+  const methodName = labelMetode(order.metodePembayaran ?? order.payment?.method);
 
   return (
     <div

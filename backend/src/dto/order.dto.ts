@@ -40,6 +40,15 @@ export interface OrderDTO {
   totalAmount: number;
   items: OrderItemDTO[];
   payment: PaymentDTO | null;
+  // ── Pembayaran dua jalur (manual + Midtrans) ──
+  /** MENUNGGU | LUNAS | GAGAL — status pembayaran lintas jalur. */
+  statusPembayaran: string | null;
+  /** Metode aktual: kode manual (TUNAI/…) atau label Midtrans (GoPay/…). */
+  metodePembayaran: string | null;
+  /** Nominal yang disepakati saat lunas. */
+  nominalDibayar: number | null;
+  /** `order_id` yang dikirim ke Midtrans (null bila bukan jalur Midtrans). */
+  midtransOrderId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -83,6 +92,10 @@ export function toOrderDTO(order: OrderWithRelations): OrderDTO {
     totalAmount: Number(order.totalAmount),
     items: order.items.map(toOrderItemDTO),
     payment: order.payment ? toPaymentDTO(order.payment) : null,
+    statusPembayaran: order.statusPembayaran,
+    metodePembayaran: order.metodePembayaran,
+    nominalDibayar: order.nominalDibayar === null ? null : Number(order.nominalDibayar),
+    midtransOrderId: order.midtransOrderId,
     createdAt: order.createdAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
   };

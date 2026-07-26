@@ -62,6 +62,14 @@ export const releaseService = {
         // dari baris `payments`.
         paymentMethod: order.payment.method,
         paidAt: order.payment.createdAt,
+        // Ringkasan pembayaran domain baru — SEMUA jalur (bayar di meja, kasir,
+        // manual, Midtrans) melewati gerbang ini, jadi status baru selalu ikut
+        // konsisten. Metode/nominal di-coalesce: jalur baru sudah mengisinya
+        // dengan nilai akurat (mis. label Midtrans) sebelum rilis, dan itu tidak
+        // boleh tertimpa nilai enum lama.
+        statusPembayaran: 'LUNAS',
+        metodePembayaran: order.metodePembayaran ?? order.payment.method,
+        nominalDibayar: order.nominalDibayar ?? order.totalAmount,
       },
       include: RELEASE_INCLUDE,
     });

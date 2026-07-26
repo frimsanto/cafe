@@ -12,6 +12,9 @@ export type KitchenStatus = 'WAITING' | 'COOKING' | 'READY';
 // QRIS/GOPAY/CARD = bayar di meja (online); CASH/EDC = bayar di kasir.
 export type PaymentMethodCode = 'QRIS' | 'GOPAY' | 'CARD' | 'CASH' | 'EDC';
 
+// Metode manual jalur pembayaran baru — dikonfirmasi kasir.
+export type ManualMethodCode = 'TUNAI' | 'QRIS_STATIS' | 'TRANSFER' | 'EDC';
+
 export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED';
 
 /** Baris pesanan — snapshot menu item saat dipesan (harga & nama ikut disimpan). */
@@ -36,6 +39,9 @@ export interface Payment {
   createdAt: string;
 }
 
+/** Status pembayaran domain baru (lintas jalur manual & Midtrans). */
+export type StatusPembayaran = 'MENUNGGU' | 'LUNAS' | 'GAGAL';
+
 export interface Order {
   id: string;
   cafeId: string;
@@ -50,6 +56,14 @@ export interface Order {
   totalAmount: number;
   /** null selama pesanan belum dibayar. */
   payment: Payment | null;
+  // ── Pembayaran dua jalur ──
+  /** MENUNGGU | LUNAS | GAGAL — mengikuti backend (bisa null pada data lama). */
+  statusPembayaran: StatusPembayaran | string | null;
+  /** Metode aktual: kode manual (TUNAI/…) atau label Midtrans (GoPay/…). */
+  metodePembayaran: string | null;
+  nominalDibayar: number | null;
+  /** `order_id` Midtrans; null bila bukan jalur Midtrans. */
+  midtransOrderId: string | null;
   createdAt: string;
   updatedAt: string;
 }

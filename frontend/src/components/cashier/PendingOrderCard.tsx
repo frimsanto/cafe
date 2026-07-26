@@ -13,6 +13,24 @@ interface PendingOrderCardProps {
 /** Batas menit sebelum pesanan disorot sebagai "menunggu terlalu lama". */
 const STALE_MINUTES = 10;
 
+/** Penanda status pembayaran (kuning/hijau/merah) di pojok kartu. */
+const STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  LUNAS: { label: 'Lunas', className: 'bg-warm-success/15 text-warm-success' },
+  GAGAL: { label: 'Gagal', className: 'bg-rose-100 text-rose-700' },
+  MENUNGGU: { label: 'Menunggu', className: 'bg-amber-100 text-amber-700' },
+};
+
+function PaymentBadge({ status }: { status: string | null }) {
+  const badge = STATUS_BADGE[status ?? 'MENUNGGU'] ?? STATUS_BADGE.MENUNGGU;
+  return (
+    <span
+      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${badge.className}`}
+    >
+      {badge.label}
+    </span>
+  );
+}
+
 /**
  * Satu pesanan yang menunggu pembayaran di kasir: identitas meja, rincian item,
  * total, dan tombol penanda lunas.
@@ -37,9 +55,12 @@ export default function PendingOrderCard({
     >
       <header className="flex items-start justify-between gap-2 border-b border-warm-line p-4">
         <div className="min-w-0">
-          <h2 className="truncate text-lg font-bold text-warm-espresso">
-            {order.tableName}
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="truncate text-lg font-bold text-warm-espresso">
+              {order.tableName}
+            </h2>
+            <PaymentBadge status={order.statusPembayaran} />
+          </div>
           <p className="font-mono text-xs text-warm-muted">{order.id}</p>
         </div>
         <span

@@ -1,7 +1,7 @@
 import type { Order } from '../types/order';
 import type { CafeInfo } from '../types/menu';
 import { formatRupiah } from './format';
-import { cashierPaymentMethods, paymentMethods } from '../data/paymentMethods';
+import { labelMetode } from '../data/paymentMethods';
 
 // Struk dibuat pada halaman selebar 80mm (ala printer thermal) dengan tinggi
 // dihitung dari jumlah item, lalu diunduh sebagai berkas PDF.
@@ -10,12 +10,11 @@ const WIDTH = 80; // mm
 const MARGIN = 6;
 const LINE = 5; // tinggi baris standar
 
+/** Metode akurat: kode manual / label Midtrans, jatuh ke enum lama; null → belum dibayar. */
 function methodLabel(order: Order): string {
-  // Metode bisa berasal dari pembayaran di meja maupun di kasir.
-  const method = order.payment?.method;
-  if (!method) return '-';
-  const all = [...paymentMethods, ...cashierPaymentMethods];
-  return all.find((m) => m.code === method)?.name ?? method;
+  if (order.metodePembayaran) return labelMetode(order.metodePembayaran);
+  if (order.payment) return labelMetode(order.payment.method);
+  return 'Belum dibayar';
 }
 
 function formatWaktu(iso: string): string {
@@ -37,7 +36,12 @@ function formatWaktu(iso: string): string {
  * Dibangun dari data order yang sudah diambil dari API. Struk versi server
  * (PDF resmi) tersedia lewat `receiptsApi.downloadPdf` bila dibutuhkan.
  */
-export async function downloadReceiptPdf(order: Order, cafe: CafeInfo): Promise<void> {
+export async function downloadReceiptPdf(
+  order: Order,
+  cafe: CafeInfo,
+  /** Uang diterima & kembalian — hanya untuk pembayaran tunai. */
+  cash?: { received: number; change: number } | null,
+): Promise<void> {
   const { jsPDF } = await import('jspdf');
 
   // Perkiraan tinggi: header + baris item (nama + subtotal) + ringkasan + footer.
@@ -124,7 +128,11 @@ export async function downloadReceiptPdf(order: Order, cafe: CafeInfo): Promise<
   // Ringkasan
   row('TOTAL', formatRupiah(order.totalAmount), { bold: true, size: 11 });
   y += 1;
-  row('Metode', methodLabel(order), { size: 8 });
+  row('Metode Pembayaran', methodLabel(order), { size: 8 });
+  // Kembalian hanya untuk tunai (uang diterima > total).
+  if (cash && cash.change > 0) {
+    row('Kembalian', formatRupiah(cash.change), { size: 8 });
+  }
   // Pesanan yang belum dibayar tidak punya blok payment sama sekali.
   row(
     'Status',
@@ -135,7 +143,10 @@ export async function downloadReceiptPdf(order: Order, cafe: CafeInfo): Promise<
       : 'BELUM DIBAYAR',
     { size: 8 },
   );
-  row('ID Transaksi', order.payment?.transactionId ?? '-', { size: 8 });
+  // ID Transaksi hanya bila lewat Midtrans.
+  if (order.midtransOrderId) {
+    row('ID Transaksi', order.midtransOrderId, { size: 8 });
+  }
   dashed();
 
   // Footer

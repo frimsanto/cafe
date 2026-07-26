@@ -65,3 +65,29 @@ export interface TopMenuItemDTO {
   imageUrl: string;
   soldCount: number;
 }
+
+/** Konfigurasi pembayaran kafe (GET /api/cafe/payment-config). serverKey TIDAK ada. */
+export interface PaymentConfigDTO {
+  metodeDiterima: string[];
+  midtransAktif: boolean;
+  clientKey: string | null;
+  isProduction: boolean;
+}
+
+/** Hasil pembuatan transaksi Midtrans (POST /api/pembayaran/midtrans/buat). */
+export interface MidtransBuatDTO {
+  snapToken: string;
+  /** `order_id` Midtrans — dipakai halaman status & polling. */
+  orderId: string;
+  grossAmount: number;
+  clientKey: string | null;
+  isProduction: boolean;
+}
+
+/** Status transaksi Midtrans (GET /api/pembayaran/:midtransOrderId/status). */
+export interface StatusPembayaranDTO {
+  status: string;
+  metodePembayaran: string | null;
+  grossAmount: number;
+  updatedAt: string;
+}

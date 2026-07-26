@@ -1,6 +1,6 @@
 import type { Order } from '../../types/order';
 import { formatRupiah } from '../../lib/format';
-import { cashierPaymentMethods, paymentMethods } from '../../data/paymentMethods';
+import { labelMetode } from '../../data/paymentMethods';
 
 interface ReceiptPreviewProps {
   order: Order;
@@ -9,11 +9,11 @@ interface ReceiptPreviewProps {
   cash?: { received: number; change: number } | null;
 }
 
+/** Metode akurat: kode manual / label Midtrans, jatuh ke enum lama; null → belum dibayar. */
 function methodLabel(order: Order): string {
-  const method = order.payment?.method;
-  if (!method) return '-';
-  const all = [...paymentMethods, ...cashierPaymentMethods];
-  return all.find((m) => m.code === method)?.name ?? method;
+  if (order.metodePembayaran) return labelMetode(order.metodePembayaran);
+  if (order.payment) return labelMetode(order.payment.method);
+  return 'Belum dibayar';
 }
 
 function formatWaktu(iso: string): string {
@@ -128,10 +128,14 @@ export default function ReceiptPreview({
               : 'BELUM DIBAYAR'}
           </dd>
         </div>
-        <div className="flex justify-between gap-2">
-          <dt>ID Transaksi</dt>
-          <dd className="text-right">{order.payment?.transactionId ?? '-'}</dd>
-        </div>
+        {(order.midtransOrderId || order.payment?.transactionId) && (
+          <div className="flex justify-between gap-2">
+            <dt>ID Transaksi</dt>
+            <dd className="break-all text-right">
+              {order.midtransOrderId ?? order.payment?.transactionId}
+            </dd>
+          </div>
+        )}
       </dl>
 
       <Divider />

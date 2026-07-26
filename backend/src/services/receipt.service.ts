@@ -10,7 +10,13 @@ export const receiptService = {
   async getPaidOrder(cafeId: string, orderId: string): Promise<ReceiptOrder> {
     const order = await prisma.order.findFirst({
       where: { id: orderId, cafeId },
-      include: { cafe: true, table: true, items: true, payment: true },
+      include: {
+        cafe: true,
+        table: true,
+        items: true,
+        payment: true,
+        pembayaranManual: true,
+      },
     });
     if (!order) {
       throw ApiError.notFound('Pesanan tidak ditemukan');
