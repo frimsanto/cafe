@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MenuCategoryWithItems } from '../../types/menu';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
+import ModalScrollArea from '../common/ModalScrollArea';
 
 interface CategoryManagerModalProps {
   categories: MenuCategoryWithItems[];
@@ -40,6 +42,8 @@ export default function CategoryManagerModal({
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const editRef = useRef<HTMLInputElement>(null);
+
+  useBodyScrollLock();
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -97,7 +101,7 @@ export default function CategoryManagerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center overflow-hidden bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="kelola-kategori-title"
@@ -109,8 +113,8 @@ export default function CategoryManagerModal({
         className="absolute inset-0 cursor-default"
       />
 
-      <div className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-warm-cream p-5 shadow-2xl sm:rounded-3xl">
-        <div className="mb-4 flex items-start justify-between gap-3">
+      <div className="relative flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-warm-cream shadow-2xl sm:rounded-3xl">
+        <div className="flex shrink-0 items-start justify-between gap-3 px-5 pb-3 pt-5">
           <div>
             <h2 id="kelola-kategori-title" className="text-lg font-bold text-warm-espresso">
               Kelola Kategori
@@ -131,190 +135,194 @@ export default function CategoryManagerModal({
           </button>
         </div>
 
-        {/* Daftar kategori */}
-        {categories.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-warm-line bg-warm-paper/60 px-4 py-8 text-center text-sm text-warm-muted">
-            Belum ada kategori. Tambahkan yang pertama di bawah.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {categories.map((category, index) => {
-              const isEditing = editingId === category.id;
-              const isConfirming = confirmId === category.id;
-              const hasItems = category.items.length > 0;
+        <ModalScrollArea className="px-5 pb-1">
+          {/* Daftar kategori */}
+          {categories.length === 0 ? (
+            <p className="rounded-2xl border border-dashed border-warm-line bg-warm-paper/60 px-4 py-8 text-center text-sm text-warm-muted">
+              Belum ada kategori. Tambahkan yang pertama di bawah.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {categories.map((category, index) => {
+                const isEditing = editingId === category.id;
+                const isConfirming = confirmId === category.id;
+                const hasItems = category.items.length > 0;
 
-              return (
-                <li
-                  key={category.id}
-                  className="rounded-2xl bg-warm-paper p-3 shadow-sm ring-1 ring-warm-line"
-                >
-                  {isEditing ? (
-                    <div>
-                      {/* Layar sempit: tombol simpan/batal turun ke bawah kolom. */}
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <input
-                          ref={editRef}
-                          value={editingName}
-                          onChange={(event) => setEditingName(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault();
-                              saveEditing();
-                            }
-                          }}
-                          aria-label={`Nama baru untuk ${category.name}`}
-                          className={inputClass}
-                        />
+                return (
+                  <li
+                    key={category.id}
+                    className="rounded-2xl bg-warm-paper p-3 shadow-sm ring-1 ring-warm-line"
+                  >
+                    {isEditing ? (
+                      <div>
+                        {/* Layar sempit: tombol simpan/batal turun ke bawah kolom. */}
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <input
+                            ref={editRef}
+                            value={editingName}
+                            onChange={(event) => setEditingName(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                saveEditing();
+                              }
+                            }}
+                            aria-label={`Nama baru untuk ${category.name}`}
+                            className={inputClass}
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={saveEditing}
+                              className="flex-1 shrink-0 rounded-xl bg-warm-amber px-3.5 py-2 text-sm font-semibold text-white transition hover:brightness-95 sm:flex-none sm:py-0"
+                            >
+                              Simpan
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingId(null)}
+                              className="flex-1 shrink-0 rounded-xl bg-warm-espresso/10 px-3.5 py-2 text-sm font-semibold text-warm-subtle transition hover:bg-warm-espresso/20 sm:flex-none sm:py-0"
+                            >
+                              Batal
+                            </button>
+                          </div>
+                        </div>
+                        {editError && (
+                          <p className="mt-1.5 text-sm text-rose-600">{editError}</p>
+                        )}
+                      </div>
+                    ) : isConfirming ? (
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm text-warm-subtle">
+                          Hapus kategori{' '}
+                          <span className="font-semibold">{category.name}</span>?
+                        </p>
                         <div className="flex gap-2">
                           <button
                             type="button"
-                            onClick={saveEditing}
-                            className="flex-1 shrink-0 rounded-xl bg-warm-amber px-3.5 py-2 text-sm font-semibold text-white transition hover:brightness-95 sm:flex-none sm:py-0"
-                          >
-                            Simpan
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditingId(null)}
-                            className="flex-1 shrink-0 rounded-xl bg-warm-espresso/10 px-3.5 py-2 text-sm font-semibold text-warm-subtle transition hover:bg-warm-espresso/20 sm:flex-none sm:py-0"
+                            onClick={() => setConfirmId(null)}
+                            className="rounded-lg bg-warm-espresso/10 px-3 py-1.5 text-sm font-semibold text-warm-subtle transition hover:bg-warm-espresso/20"
                           >
                             Batal
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onRemove(category.id);
+                              setConfirmId(null);
+                            }}
+                            className="rounded-lg bg-rose-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-rose-700"
+                          >
+                            Ya, hapus
+                          </button>
                         </div>
                       </div>
-                      {editError && (
-                        <p className="mt-1.5 text-sm text-rose-600">{editError}</p>
-                      )}
-                    </div>
-                  ) : isConfirming ? (
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm text-warm-subtle">
-                        Hapus kategori{' '}
-                        <span className="font-semibold">{category.name}</span>?
-                      </p>
-                      <div className="flex gap-2">
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        {/* Ubah urutan tampil kategori di menu pelanggan */}
+                        <div className="flex shrink-0 flex-col">
+                          <button
+                            type="button"
+                            disabled={index === 0}
+                            onClick={() => onReorder(category.id, 'up')}
+                            aria-label={`Naikkan urutan ${category.name}`}
+                            className="rounded-md px-1 text-warm-muted transition hover:bg-warm-espresso/5 hover:text-warm-subtle disabled:cursor-not-allowed disabled:text-warm-line disabled:hover:bg-transparent"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="m6 15 6-6 6 6" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={index === categories.length - 1}
+                            onClick={() => onReorder(category.id, 'down')}
+                            aria-label={`Turunkan urutan ${category.name}`}
+                            className="rounded-md px-1 text-warm-muted transition hover:bg-warm-espresso/5 hover:text-warm-subtle disabled:cursor-not-allowed disabled:text-warm-line disabled:hover:bg-transparent"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="m6 9 6 6 6-6" />
+                            </svg>
+                          </button>
+                        </div>
+
+                        <span className="hidden w-5 shrink-0 text-center text-sm font-bold tabular-nums text-warm-line sm:block">
+                          {index + 1}
+                        </span>
+
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-semibold text-warm-espresso">
+                            {category.name}
+                          </p>
+                          <p className="text-xs text-warm-muted">
+                            {category.items.length} item
+                          </p>
+                        </div>
+
                         <button
                           type="button"
-                          onClick={() => setConfirmId(null)}
-                          className="rounded-lg bg-warm-espresso/10 px-3 py-1.5 text-sm font-semibold text-warm-subtle transition hover:bg-warm-espresso/20"
+                          onClick={() => startEditing(category.id, category.name)}
+                          className="rounded-lg px-2.5 py-1.5 text-sm font-semibold text-warm-muted transition hover:bg-warm-amber/10 hover:text-warm-amber"
                         >
-                          Batal
+                          Ubah
                         </button>
+
                         <button
                           type="button"
-                          onClick={() => {
-                            onRemove(category.id);
-                            setConfirmId(null);
-                          }}
-                          className="rounded-lg bg-rose-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-rose-700"
+                          disabled={hasItems}
+                          onClick={() => setConfirmId(category.id)}
+                          title={
+                            hasItems
+                              ? 'Pindahkan atau hapus itemnya dulu sebelum kategori ini bisa dihapus.'
+                              : undefined
+                          }
+                          className="rounded-lg px-2.5 py-1.5 text-sm font-semibold text-warm-muted transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:text-warm-line disabled:hover:bg-transparent"
                         >
-                          Ya, hapus
+                          Hapus
                         </button>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      {/* Ubah urutan tampil kategori di menu pelanggan */}
-                      <div className="flex shrink-0 flex-col">
-                        <button
-                          type="button"
-                          disabled={index === 0}
-                          onClick={() => onReorder(category.id, 'up')}
-                          aria-label={`Naikkan urutan ${category.name}`}
-                          className="rounded-md px-1 text-warm-muted transition hover:bg-warm-espresso/5 hover:text-warm-subtle disabled:cursor-not-allowed disabled:text-warm-line disabled:hover:bg-transparent"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="m6 15 6-6 6 6" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          disabled={index === categories.length - 1}
-                          onClick={() => onReorder(category.id, 'down')}
-                          aria-label={`Turunkan urutan ${category.name}`}
-                          className="rounded-md px-1 text-warm-muted transition hover:bg-warm-espresso/5 hover:text-warm-subtle disabled:cursor-not-allowed disabled:text-warm-line disabled:hover:bg-transparent"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="m6 9 6 6 6-6" />
-                          </svg>
-                        </button>
-                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
 
-                      <span className="hidden w-5 shrink-0 text-center text-sm font-bold tabular-nums text-warm-line sm:block">
-                        {index + 1}
-                      </span>
-
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-semibold text-warm-espresso">
-                          {category.name}
-                        </p>
-                        <p className="text-xs text-warm-muted">
-                          {category.items.length} item
-                        </p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => startEditing(category.id, category.name)}
-                        className="rounded-lg px-2.5 py-1.5 text-sm font-semibold text-warm-muted transition hover:bg-warm-amber/10 hover:text-warm-amber"
-                      >
-                        Ubah
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={hasItems}
-                        onClick={() => setConfirmId(category.id)}
-                        title={
-                          hasItems
-                            ? 'Pindahkan atau hapus itemnya dulu sebelum kategori ini bisa dihapus.'
-                            : undefined
-                        }
-                        className="rounded-lg px-2.5 py-1.5 text-sm font-semibold text-warm-muted transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:text-warm-line disabled:hover:bg-transparent"
-                      >
-                        Hapus
-                      </button>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-
-        {/* Tambah kategori */}
-        <form onSubmit={handleAdd} className="mt-4 border-t border-warm-line pt-4">
-          <label
-            htmlFor="kategori-baru"
-            className="mb-1 block text-sm font-medium text-warm-subtle"
-          >
-            Tambah kategori
-          </label>
-          <div className="flex gap-2">
-            <input
-              id="kategori-baru"
-              value={newName}
-              onChange={(event) => setNewName(event.target.value)}
-              placeholder="mis. Minuman Dingin"
-              className={inputClass}
-            />
-            <button
-              type="submit"
-              className="shrink-0 rounded-xl bg-warm-amber px-4 text-sm font-semibold text-white transition hover:brightness-95"
+          {/* Tambah kategori */}
+          <form onSubmit={handleAdd} className="mt-4 border-t border-warm-line pt-4">
+            <label
+              htmlFor="kategori-baru"
+              className="mb-1 block text-sm font-medium text-warm-subtle"
             >
-              Tambah
-            </button>
-          </div>
-          {addError && <p className="mt-1.5 text-sm text-rose-600">{addError}</p>}
-        </form>
+              Tambah kategori
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="kategori-baru"
+                value={newName}
+                onChange={(event) => setNewName(event.target.value)}
+                placeholder="mis. Minuman Dingin"
+                className={inputClass}
+              />
+              <button
+                type="submit"
+                className="shrink-0 rounded-xl bg-warm-amber px-4 text-sm font-semibold text-white transition hover:brightness-95"
+              >
+                Tambah
+              </button>
+            </div>
+            {addError && <p className="mt-1.5 text-sm text-rose-600">{addError}</p>}
+          </form>
+        </ModalScrollArea>
 
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-5 w-full rounded-2xl bg-warm-espresso/10 py-3 font-semibold text-warm-subtle transition hover:bg-warm-espresso/20"
-        >
-          Selesai
-        </button>
+        <div className="shrink-0 px-5 pb-5 pt-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full rounded-2xl bg-warm-espresso/10 py-3 font-semibold text-warm-subtle transition hover:bg-warm-espresso/20"
+          >
+            Selesai
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -11,16 +11,21 @@ import AlertBanner from '../components/common/AlertBanner';
 /**
  * Pengaturan Pembayaran kafe (khusus OWNER).
  *
- * Dua bagian: metode manual yang diterima (checklist) dan integrasi Midtrans
- * opsional (kredensial + mode). serverKey bersifat tulis-saja — tidak pernah
- * dikirim balik server, jadi kolomnya selalu kosong saat dibuka; mengisinya =
- * mengganti, mengosongkannya = biarkan kredensial lama.
+ * Tiga bagian: metode manual yang diterima (checklist), integrasi Midtrans
+ * opsional (kredensial + mode), dan status DOKU Checkout. serverKey bersifat
+ * tulis-saja — tidak pernah dikirim balik server, jadi kolomnya selalu kosong
+ * saat dibuka; mengisinya = mengganti, mengosongkannya = biarkan kredensial lama.
+ *
+ * Bagian DOKU sengaja hanya BACA. Kredensialnya milik platform, satu untuk semua
+ * kafe, jadi tidak ada yang bisa — dan boleh — disetel pemilik kafe di sini;
+ * yang ditampilkan cuma apakah jalur itu sedang aktif untuk pelanggannya.
  */
 export default function PaymentSettingsPage() {
   const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [dokuAktif, setDokuAktif] = useState(false);
 
   const [selected, setSelected] = useState<Set<ManualMethodCode>>(new Set(['TUNAI']));
   const [midtransOn, setMidtransOn] = useState(false);
@@ -57,6 +62,29 @@ export default function PaymentSettingsPage() {
       cancelled = true;
     };
   }, []);
+
+  // Status DOKU tidak ada di `payment-config` (yang isinya khusus setelan kafe),
+  // jadi diambil dari endpoint opsi — sumber yang sama dengan yang dibaca
+  // checkout pelanggan, supaya yang dilihat pemilik persis yang dialami tamunya.
+  // Kegagalannya sengaja ditelan: ini panel informasi, bukan syarat menyimpan.
+  useEffect(() => {
+    const cafeId = user?.cafeId;
+    if (!cafeId) return;
+    let cancelled = false;
+
+    pembayaranApi
+      .opsi(cafeId)
+      .then((opsi) => {
+        if (!cancelled) setDokuAktif(opsi.dokuAktif ?? false);
+      })
+      .catch(() => {
+        if (!cancelled) setDokuAktif(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.cafeId]);
 
   const toggleMethod = (code: ManualMethodCode) => {
     setSelected((prev) => {
@@ -290,6 +318,48 @@ export default function PaymentSettingsPage() {
                 </div>
               </div>
             )}
+          </section>
+
+          {/* ── DOKU Checkout (informasi platform, bukan setelan kafe) ── */}
+          <section className="rounded-2xl bg-warm-paper p-5 shadow-sm ring-1 ring-warm-line">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-warm-espresso">
+                  DOKU Checkout <span className="text-xl">🟣</span>
+                </h2>
+                <p className="mt-0.5 text-xs text-warm-muted">
+                  Gateway platform — tidak perlu disetel per kafe.
+                </p>
+              </div>
+
+              <span
+                className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
+                  dokuAktif
+                    ? 'bg-warm-success/10 text-warm-success'
+                    : 'bg-warm-cream text-warm-muted'
+                }`}
+              >
+                {dokuAktif ? '✅ Aktif' : '○ Tidak aktif'}
+              </span>
+            </div>
+
+            <div className="mt-4 space-y-3 border-t border-warm-line pt-4 text-sm text-warm-subtle">
+              <p>
+                {dokuAktif
+                  ? 'Pembayaran via DOKU tersedia otomatis untuk semua kafe di platform CafeOS. Pelanggan bisa bayar menggunakan QRIS, Virtual Account, dan e-wallet melalui halaman checkout DOKU.'
+                  : 'Jalur DOKU sedang tidak aktif di platform, jadi pilihan ini tidak muncul di halaman checkout pelanggan. Tidak ada yang perlu kamu lakukan — pengaktifannya dari sisi Fessolution.'}
+              </p>
+              <p className="text-xs text-warm-muted">
+                Dikelola oleh: Fessolution (
+                <a
+                  href="mailto:admin@fessolution.my.id"
+                  className="font-medium text-warm-subtle underline underline-offset-2"
+                >
+                  admin@fessolution.my.id
+                </a>
+                )
+              </p>
+            </div>
           </section>
 
           <div className="flex justify-end">

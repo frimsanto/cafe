@@ -1,31 +1,42 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { Prisma } from '@prisma/client';
-import type { PaymentMethod } from '@prisma/client';
+import type { OrderStatus, PaymentMethod } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { ApiError } from '../lib/ApiError';
 import { dekripsi } from '../lib/enkripsi';
 import { getMidtransSnap, getMidtransCoreApi } from '../lib/midtrans';
+import { buatDokuCheckout, isDokuEnabled, verifikasiSignatureDoku } from '../lib/doku';
 import {
+  dokuChannelToEnum,
+  dokuChannelToKode,
   labelMidtransPaymentType,
   manualMethodToEnum,
+  mapDokuStatus,
   mapMidtransStatus,
   midtransPaymentTypeToEnum,
   type ManualMethod,
   type StatusPembayaran,
 } from '../lib/paymentMethods';
 import { releaseService } from './release.service';
+import { realtime } from '../realtime/realtime';
 import { toOrderWithTableDTO } from '../dto/order.dto';
 import type { CashierOrderDTO } from '../dto/cashier.dto';
 import type { ManualPaymentInput } from '../validation/pembayaran.validation';
 
-// Jalur pembayaran dua rel:
-//   - Manual : kasir mengonfirmasi tunai / QRIS statis / transfer / EDC.
-//   - Midtrans: pelanggan bayar via Snap (QRIS dinamis / e-wallet / VA), lalu
-//               gateway memberi tahu hasil lewat webhook.
+// Jalur pembayaran tiga rel:
+//   - Midtrans: pelanggan bayar sendiri via Snap (QRIS dinamis / e-wallet / VA),
+//               gateway memberi tahu hasilnya lewat webhook. Kredensial PER KAFE.
+//               INI JALUR UTAMA bagi kafe yang punya akun Midtrans sendiri.
+//   - DOKU    : checkout hosted DOKU dengan kredensial GLOBAL milik platform
+//               (dari environment, bukan database). Dipakai kafe yang tidak punya
+//               akun gateway sendiri, tapi tetap ingin pembayaran otomatis.
+//   - Manual  : kasir yang mengonfirmasi tunai / QRIS statis / transfer / EDC.
 //
-// Keduanya bermuara pada gerbang tunggal `releaseService.releaseToKitchen`:
+// Simulasi pembayaran lama sudah dihapus — tidak ada jalur "pura-pura lunas".
+//
+// Ketiganya bermuara pada gerbang tunggal `releaseService.releaseToKitchen`:
 // mencatat baris `payments` (SUCCESS) lalu memindahkan pesanan ke dapur dan
-// menyiarkan event yang sama (KDS, dasbor omzet, status meja). Field baru
+// menyiarkan event yang sama (KDS, dasbor omzet, status meja). Field
 // `orders.status_pembayaran/metode_pembayaran/nominal_dibayar` adalah ringkasan
 // domain baru yang menyertainya.
 
@@ -89,15 +100,29 @@ async function settleOrderPaid(
 
   // Transisi status + seluruh siaran (KDS/dasbor/meja) — satu gerbang bersama.
   const { order: dto } = await releaseService.releaseToKitchen(orderId);
+  realtime.emitPaymentStatusChanged(dto.cafeId, {
+    orderId: dto.id,
+    statusPembayaran: dto.statusPembayaran,
+    metodePembayaran: dto.metodePembayaran,
+  });
   return dto;
 }
 
 export interface MidtransBuatResult {
   snapToken: string;
+  /** `order_id` yang dikirim ke Midtrans (bukan id pesanan CafeOS). */
   orderId: string;
   grossAmount: number;
   clientKey: string | null;
   isProduction: boolean;
+}
+
+export interface DokuBuatResult {
+  /** Halaman pembayaran DOKU — pelanggan diarahkan ke sini. */
+  paymentUrl: string;
+  /** `invoice_number` yang dikirim ke DOKU (bukan id pesanan CafeOS). */
+  invoiceNumber: string;
+  grossAmount: number;
 }
 
 export interface StatusPembayaranResult {
@@ -105,6 +130,35 @@ export interface StatusPembayaranResult {
   metodePembayaran: string | null;
   grossAmount: number;
   updatedAt: string;
+  /** Nama kafe — halaman status pelanggan menyebutnya, dan tamu tidak login. */
+  cafeName: string;
+  /** Pesanan lengkap (item, meja, total) agar halaman status berdiri sendiri. */
+  pesanan: CashierOrderDTO;
+}
+
+/** Metode yang bisa dipakai pelanggan di sebuah kafe (endpoint publik). */
+export interface OpsiPembayaranResult {
+  cafeId: string;
+  cafeName: string;
+  /** Kode metode manual yang diaktifkan kafe (dikonfirmasi kasir). */
+  metodeDiterima: string[];
+  /** True bila kredensial Midtrans kafe sudah disetel — jalur utama. */
+  midtransAktif: boolean;
+  /**
+   * True bila DOKU Checkout aktif di platform. Global (bukan per kafe) dan
+   * hanya berupa boolean — kredensialnya tidak pernah dikirim ke klien.
+   */
+  dokuAktif: boolean;
+}
+
+/** Cari pesanan dari id CafeOS ATAU referensi gateway-nya (Midtrans/DOKU). */
+function findOrderForStatus(orderId: string) {
+  return prisma.order.findFirst({
+    where: {
+      OR: [{ midtransOrderId: orderId }, { dokuInvoiceNumber: orderId }, { id: orderId }],
+    },
+    include: CASHIER_INCLUDE,
+  });
 }
 
 export const pembayaranService = {
@@ -164,18 +218,43 @@ export const pembayaranService = {
     });
   },
 
+  /** Metode yang tersedia di sebuah kafe — dibaca halaman checkout pelanggan. */
+  async opsiPublik(cafeId: string): Promise<OpsiPembayaranResult> {
+    const cafe = await prisma.cafe.findUnique({
+      where: { id: cafeId },
+      select: { id: true, name: true, metodeDiterima: true, midtransAktif: true },
+    });
+    if (!cafe) throw ApiError.notFound('Kafe tidak ditemukan');
+
+    return {
+      cafeId: cafe.id,
+      cafeName: cafe.name,
+      metodeDiterima: cafe.metodeDiterima,
+      midtransAktif: cafe.midtransAktif,
+      dokuAktif: isDokuEnabled(),
+    };
+  },
+
   /**
    * Buat transaksi Midtrans (Snap) untuk sebuah pesanan. Menyimpan snapToken &
    * midtransOrderId agar webhook/polling bisa mencocokkan kembali.
+   *
+   * Dipanggil PELANGGAN yang tidak login, jadi `cafeId` diambil dari pesanan —
+   * bukan dari input klien. Yang bisa dilakukan pemegang sebuah `orderId`
+   * hanyalah menerbitkan tagihan untuk pesanan itu sendiri, ke rekening kafe
+   * pemiliknya.
    */
-  async buatMidtrans(cafeId: string, orderId: string): Promise<MidtransBuatResult> {
-    const order = await prisma.order.findFirst({
+  async buatMidtrans(orderId: string): Promise<MidtransBuatResult> {
+    const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { items: true },
+      include: { items: true, payment: true },
     });
     if (!order) throw ApiError.notFound('Pesanan tidak ditemukan');
+    if (order.status !== 'MENUNGGU_PEMBAYARAN' || order.payment?.status === 'SUCCESS') {
+      throw ApiError.conflict('Pesanan ini sudah dibayar');
+    }
 
-    const cafe = await prisma.cafe.findUnique({ where: { id: cafeId } });
+    const cafe = await prisma.cafe.findUnique({ where: { id: order.cafeId } });
     if (!cafe || !cafe.midtransAktif) {
       throw ApiError.badRequest('Midtrans belum dikonfigurasi untuk cafe ini');
     }
@@ -190,7 +269,7 @@ export const pembayaranService = {
     }));
     const grossAmount = itemDetails.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
-    const midtransOrderId = `CAFEOS-${cafeId.slice(0, 8)}-${order.id.slice(0, 8)}-${Date.now()}`;
+    const midtransOrderId = `CAFEOS-${cafe.id.slice(0, 8)}-${order.id.slice(0, 8)}-${Date.now()}`;
 
     let transaction;
     try {
@@ -221,6 +300,67 @@ export const pembayaranService = {
       grossAmount,
       clientKey: cafe.midtransClientKey,
       isProduction: cafe.midtransProduction,
+    };
+  },
+
+  /**
+   * Buat halaman pembayaran DOKU Checkout untuk sebuah pesanan. Menyimpan
+   * `dokuInvoiceNumber` agar notifikasi (webhook) bisa mencocokkan pesanan.
+   *
+   * Sama seperti jalur Midtrans, ini dipanggil PELANGGAN yang tidak login: yang
+   * bisa dilakukan pemegang sebuah `orderId` hanyalah menerbitkan tagihan untuk
+   * pesanan itu sendiri. Bedanya kredensial DOKU milik platform, bukan kafe —
+   * jadi tidak ada konfigurasi per kafe yang perlu dibaca di sini.
+   */
+  async buatDoku(orderId: string): Promise<DokuBuatResult> {
+    if (!isDokuEnabled()) {
+      throw ApiError.badRequest('DOKU belum dikonfigurasi di server');
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true, payment: true },
+    });
+    if (!order) throw ApiError.notFound('Pesanan tidak ditemukan');
+    if (order.status !== 'MENUNGGU_PEMBAYARAN' || order.payment?.status === 'SUCCESS') {
+      throw ApiError.conflict('Pesanan ini sudah dibayar');
+    }
+
+    // Harga dibulatkan lebih dulu agar total baris = `amount` yang dikirim
+    // (DOKU menolak tagihan yang jumlahnya tidak konsisten). IDR memang tanpa sen.
+    const items = order.items.map((item) => ({
+      name: item.name,
+      price: Math.round(Number(item.price)),
+      quantity: item.quantity,
+    }));
+    const grossAmount = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+
+    let hasil;
+    try {
+      hasil = await buatDokuCheckout({
+        orderId: order.id,
+        cafeId: order.cafeId,
+        grossAmount,
+        items,
+      });
+    } catch (err) {
+      // Galat gateway/kredensial → 400 yang ramah (bukan 500 mentah).
+      const message = err instanceof Error ? err.message : 'Gagal menghubungi DOKU';
+      throw ApiError.badRequest(`Gagal membuat pembayaran DOKU: ${message}`);
+    }
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        dokuInvoiceNumber: hasil.invoiceNumber,
+        statusPembayaran: 'MENUNGGU',
+      },
+    });
+
+    return {
+      paymentUrl: hasil.paymentUrl,
+      invoiceNumber: hasil.invoiceNumber,
+      grossAmount,
     };
   },
 
@@ -259,37 +399,118 @@ export const pembayaranService = {
       return;
     }
 
-    await applyMidtransResult(order.id, order.status === 'MENUNGGU_PEMBAYARAN', payload);
+    await applyMidtransResult(order, payload);
   },
 
   /**
-   * Status transaksi Midtrans untuk polling. Menanyakan ke Core API, merekonsiliasi
-   * status lokal, lalu mengembalikannya. Bila panggilan gateway gagal, jatuh ke
-   * status lokal (yang mungkin sudah diperbarui webhook) agar polling tetap jalan.
+   * Webhook DOKU. Seperti webhook Midtrans: SELALU selesai tanpa melempar, route
+   * membalas 200 apa pun hasilnya.
+   *
+   * `rawBody` adalah body mentah yang diterima — dipakai menghitung digest saat
+   * memverifikasi signature. Menyusunnya ulang dari objek hasil parse akan
+   * menghasilkan byte yang berbeda dan membuat notifikasi sah ikut tertolak.
+   *
+   * Notifikasi yang signature-nya tidak cocok DIABAIKAN. Ini bukan formalitas:
+   * tanpa itu, siapa pun yang tahu URL webhook bisa menyatakan pesanan orang
+   * lain LUNAS dan mengirimnya ke dapur.
    */
-  async statusMidtrans(midtransOrderId: string): Promise<StatusPembayaranResult> {
-    const order = await prisma.order.findFirst({
-      where: { midtransOrderId },
-      include: { payment: true },
+  async handleNotifikasiDoku(
+    headers: Record<string, string | string[] | undefined>,
+    payload: Record<string, unknown>,
+    opts: { rawBody: string; requestTarget: string },
+  ): Promise<void> {
+    if (!isDokuEnabled()) {
+      console.warn('[doku] webhook: DOKU belum dikonfigurasi, notifikasi diabaikan');
+      return;
+    }
+
+    const sah = verifikasiSignatureDoku({
+      headers,
+      rawBody: opts.rawBody,
+      requestTarget: opts.requestTarget,
     });
+    if (!sah) {
+      console.warn('[doku] webhook: signature tidak cocok, notifikasi diabaikan');
+      return;
+    }
+
+    const invoiceNumber = ambilInvoiceNumberDoku(payload);
+    if (!invoiceNumber) {
+      console.warn('[doku] webhook: invoice_number tidak ada di payload');
+      return;
+    }
+
+    const order = await prisma.order.findFirst({ where: { dokuInvoiceNumber: invoiceNumber } });
+    if (!order) {
+      console.warn('[doku] webhook: pesanan tidak ditemukan', invoiceNumber);
+      return;
+    }
+
+    const transaction = payload.transaction as Record<string, unknown> | undefined;
+    const response = payload.response as Record<string, unknown> | undefined;
+    // DOKU menandai sukses lewat status transaksi ATAU response code "5000".
+    const status: StatusPembayaran =
+      String(response?.code ?? '') === '5000'
+        ? 'LUNAS'
+        : mapDokuStatus(transaction?.status as string | undefined);
+
+    if (status === 'LUNAS' && order.status === 'MENUNGGU_PEMBAYARAN') {
+      const channel = payload.channel as Record<string, unknown> | undefined;
+      const channelId = channel?.id as string | undefined;
+      await settleOrderPaid(order.id, {
+        enumMethod: dokuChannelToEnum(channelId),
+        metodePembayaran: dokuChannelToKode(channelId),
+        transactionId: (transaction?.original_request_id as string) ?? invoiceNumber,
+      });
+      return;
+    }
+
+    // Pesanan yang sudah lepas dari MENUNGGU_PEMBAYARAN tidak dirilis ulang —
+    // itulah yang membuat notifikasi ganda tidak menggandakan tiket dapur.
+    if (status === order.statusPembayaran) return;
+
+    const updated = await prisma.order.update({
+      where: { id: order.id },
+      data: { statusPembayaran: status },
+      select: { statusPembayaran: true, metodePembayaran: true },
+    });
+    realtime.emitPaymentStatusChanged(order.cafeId, {
+      orderId: order.id,
+      statusPembayaran: updated.statusPembayaran,
+      metodePembayaran: updated.metodePembayaran,
+    });
+  },
+
+  /**
+   * Status pembayaran sebuah pesanan — sumber tunggal untuk polling halaman
+   * status (pelanggan maupun kasir). Menerima id pesanan CafeOS ATAU `order_id`
+   * Midtrans, karena pelanggan memegang yang pertama dan callback Snap
+   * mengembalikan yang kedua.
+   *
+   * Untuk pesanan berjalur Midtrans yang belum final, statusnya direkonsiliasi
+   * dulu ke Core API supaya tidak bergantung pada webhook yang bisa telat.
+   * Bila gateway tidak terjangkau, status lokal yang dipakai — polling tetap
+   * jalan dan webhook akan menyusul.
+   */
+  async statusPembayaran(orderId: string): Promise<StatusPembayaranResult> {
+    let order = await findOrderForStatus(orderId);
     if (!order) throw ApiError.notFound('Pesanan tidak ditemukan');
 
     const cafe = await prisma.cafe.findUnique({ where: { id: order.cafeId } });
-    let grossAmount = Number(order.nominalDibayar ?? order.totalAmount);
+    const midtransOrderId = order.midtransOrderId;
+    /** Nominal versi gateway; null bila tidak (atau belum) ditanyakan. */
+    let grossGateway: number | null = null;
 
-    if (cafe && cafe.midtransAktif) {
+    // Pesanan lunas tidak perlu ditanyakan lagi, dan pesanan jalur manual memang
+    // tidak punya transaksi di Midtrans.
+    if (midtransOrderId && cafe?.midtransAktif && order.statusPembayaran !== 'LUNAS') {
       try {
         const core = getMidtransCoreApi(cafe);
         const res = await core.transaction.status(midtransOrderId);
-        if (res.gross_amount) grossAmount = Number(res.gross_amount);
-        const stillPending = order.status === 'MENUNGGU_PEMBAYARAN';
-        const updated = await applyMidtransResult(order.id, stillPending, res);
-        return {
-          status: updated.statusPembayaran ?? 'MENUNGGU',
-          metodePembayaran: updated.metodePembayaran,
-          grossAmount,
-          updatedAt: updated.updatedAt.toISOString(),
-        };
+        if (res.gross_amount) grossGateway = Number(res.gross_amount);
+        await applyMidtransResult(order, res);
+        // Baca ulang: rekonsiliasi bisa memindahkan pesanan ke dapur.
+        order = (await findOrderForStatus(order.id)) ?? order;
       } catch (err) {
         console.warn('[pembayaran] status: gagal menghubungi Midtrans, pakai status lokal', err);
       }
@@ -298,8 +519,10 @@ export const pembayaranService = {
     return {
       status: order.statusPembayaran ?? 'MENUNGGU',
       metodePembayaran: order.metodePembayaran,
-      grossAmount,
+      grossAmount: grossGateway ?? Number(order.nominalDibayar ?? order.totalAmount),
       updatedAt: order.updatedAt.toISOString(),
+      cafeName: cafe?.name ?? 'CafeOS',
+      pesanan: toOrderWithTableDTO(order),
     };
   },
 
@@ -330,42 +553,74 @@ export const pembayaranService = {
 };
 
 /**
+ * Ambil `invoice_number` dari notifikasi DOKU. Bentuk payload berbeda antar
+ * kanal DOKU (ada yang membungkusnya dalam `response`), jadi semua letak yang
+ * dikenal dicoba — kunci ini yang menghubungkan notifikasi ke pesanan kami.
+ */
+function ambilInvoiceNumberDoku(payload: Record<string, unknown>): string | null {
+  const order = payload.order as Record<string, unknown> | undefined;
+  const response = payload.response as Record<string, unknown> | undefined;
+  const orderResponse = response?.order as Record<string, unknown> | undefined;
+
+  const kandidat = [order?.invoice_number, payload.invoice_number, orderResponse?.invoice_number];
+  for (const nilai of kandidat) {
+    if (typeof nilai === 'string' && nilai.trim() !== '') return nilai.trim();
+  }
+  return null;
+}
+
+/** Pesanan seperlunya untuk menerapkan hasil Midtrans. */
+type OrderUntukMidtrans = {
+  id: string;
+  cafeId: string;
+  status: OrderStatus;
+  statusPembayaran: string | null;
+};
+
+/**
  * Terapkan hasil Midtrans ke pesanan (dipakai webhook & polling). Bila LUNAS,
  * melewati gerbang rilis; bila MENUNGGU/GAGAL cukup memperbarui status domain.
- * `bolehRilis` mencegah rilis ganda untuk pesanan yang sudah pindah dari
- * MENUNGGU_PEMBAYARAN.
+ *
+ * Pesanan yang sudah pindah dari MENUNGGU_PEMBAYARAN tidak dirilis ulang —
+ * itulah yang membuat webhook ganda tidak menggandakan tiket dapur.
+ *
+ * Penulisan & siaran hanya terjadi ketika status BERUBAH. Ini penting: polling
+ * halaman status memanggil fungsi ini tiap 3 detik per pelanggan, dan menyiarkan
+ * "MENUNGGU → MENUNGGU" akan membuat layar kasir memuat ulang antreannya terus-
+ * menerus tanpa ada yang benar-benar berubah.
  */
 async function applyMidtransResult(
-  orderId: string,
-  bolehRilis: boolean,
+  order: OrderUntukMidtrans,
   data: Record<string, unknown>,
-): Promise<{ statusPembayaran: string | null; metodePembayaran: string | null; updatedAt: Date }> {
+): Promise<void> {
   const status = mapMidtransStatus(
     data.transaction_status as string | undefined,
     data.fraud_status as string | undefined,
   );
 
-  if (status === 'LUNAS' && bolehRilis) {
+  if (status === 'LUNAS' && order.status === 'MENUNGGU_PEMBAYARAN') {
     const paymentType = data.payment_type as string | undefined;
     const vaNumbers = data.va_numbers as Array<{ bank?: string }> | undefined;
-    const dto = await settleOrderPaid(orderId, {
+    await settleOrderPaid(order.id, {
       enumMethod: midtransPaymentTypeToEnum(paymentType),
       metodePembayaran: labelMidtransPaymentType(paymentType, vaNumbers),
-      transactionId: (data.order_id as string) ?? orderId,
+      transactionId: (data.order_id as string) ?? order.id,
     });
-    return {
-      statusPembayaran: dto.statusPembayaran,
-      metodePembayaran: dto.metodePembayaran,
-      updatedAt: new Date(dto.updatedAt),
-    };
+    return;
   }
 
-  // LUNAS tapi sudah dirilis sebelumnya → cukup pastikan penanda lunas, tanpa
-  // menyentuh gerbang rilis lagi.
+  if (status === order.statusPembayaran) return;
+
   const updated = await prisma.order.update({
-    where: { id: orderId },
+    where: { id: order.id },
     data: { statusPembayaran: status },
-    select: { statusPembayaran: true, metodePembayaran: true, updatedAt: true },
+    select: { statusPembayaran: true, metodePembayaran: true },
   });
-  return updated;
+
+  // Badge kasir ikut berubah untuk MENUNGGU/GAGAL juga — bukan hanya saat lunas.
+  realtime.emitPaymentStatusChanged(order.cafeId, {
+    orderId: order.id,
+    statusPembayaran: updated.statusPembayaran,
+    metodePembayaran: updated.metodePembayaran,
+  });
 }

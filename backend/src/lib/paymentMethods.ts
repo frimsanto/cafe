@@ -31,6 +31,10 @@ export const METODE_LABEL: Record<string, string> = {
   QRIS: 'QRIS',
   GOPAY: 'GoPay',
   CARD: 'Kartu Kredit/Debit',
+  // Kode jalur DOKU Checkout (gateway global platform).
+  DOKU: 'DOKU Checkout',
+  DOKU_QRIS: 'DOKU QRIS',
+  DOKU_VA: 'DOKU Virtual Account',
 };
 
 /**
@@ -131,4 +135,55 @@ export function midtransPaymentTypeToEnum(paymentType: string | undefined): Paym
       // bank_transfer / echannel / cstore / dll — dianggap kanal QRIS/cashless.
       return 'QRIS';
   }
+}
+
+// ── Pemetaan payload DOKU ────────────────────────────────────────────────────
+
+/**
+ * Terjemahkan status transaksi DOKU ke status domain. DOKU hanya memberi tahu
+ * hasil akhir lewat notifikasi, jadi apa pun yang belum jelas dianggap MENUNGGU
+ * (bukan GAGAL) supaya pesanan tidak ditandai gagal karena status tak dikenal.
+ */
+export function mapDokuStatus(transactionStatus: string | undefined): StatusPembayaran {
+  switch (transactionStatus?.toUpperCase()) {
+    case 'SUCCESS':
+    case 'SETTLEMENT':
+    case 'PAID':
+      return 'LUNAS';
+    case 'PENDING':
+    case 'PROCESSING':
+      return 'MENUNGGU';
+    case 'FAILED':
+    case 'EXPIRED':
+    case 'CANCELLED':
+    case 'CANCELED':
+    case 'REFUNDED':
+      return 'GAGAL';
+    default:
+      return 'MENUNGGU';
+  }
+}
+
+/**
+ * Kode metode dari `channel.id` DOKU (mis. `VIRTUAL_ACCOUNT_BCA`, `EMONEY_OVO`).
+ * Hasilnya disimpan di `orders.metode_pembayaran` dan diterjemahkan
+ * `labelMetode` saat ditampilkan. Kanal yang tidak dikenal jatuh ke `DOKU`.
+ */
+export function dokuChannelToKode(channelId: string | undefined): string {
+  const kanal = channelId?.toUpperCase() ?? '';
+  if (kanal.includes('QRIS')) return 'DOKU_QRIS';
+  if (kanal.includes('VIRTUAL_ACCOUNT')) return 'DOKU_VA';
+  return 'DOKU';
+}
+
+/**
+ * Pemetaan best-effort kanal DOKU ke enum `PaymentMethod` lama. Enum tidak punya
+ * nilai khusus DOKU — seluruh kanalnya cashless, jadi QRIS dipakai sebagai wakil
+ * (metode akurat tetap tersimpan sebagai string di `orders.metode_pembayaran`).
+ */
+export function dokuChannelToEnum(channelId: string | undefined): PaymentMethod {
+  const kanal = channelId?.toUpperCase() ?? '';
+  if (kanal.includes('CREDIT_CARD')) return 'CARD';
+  if (kanal.includes('EMONEY_OVO') || kanal.includes('EMONEY_SHOPEE')) return 'GOPAY';
+  return 'QRIS';
 }

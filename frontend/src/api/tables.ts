@@ -1,6 +1,5 @@
 import type { TableDTO, TableWithStatusDTO } from '../types/api';
-import { API_BASE_URL } from '../lib/apiConfig';
-import { apiFetch, readAuthToken, ApiError } from '../lib/apiClient';
+import { apiFetch, apiFetchBlob } from '../lib/apiClient';
 
 // Endpoint meja (OWNER). Daftar meja membawa status pemakaian KOSONG/DIGUNAKAN
 // yang diturunkan backend dari pesanan berjalan — bukan kolom yang bisa basi.
@@ -38,15 +37,10 @@ export const tablesApi = {
    * sedangkan tag `<img>` tidak mengirim header apa pun. Jadi diambil lewat
    * fetch lalu dijadikan object URL oleh pemanggil.
    */
-  async downloadQrPng(cafeId: string, tableId: string, size = 1024): Promise<Blob> {
-    const token = readAuthToken();
-    const response = await fetch(
-      `${API_BASE_URL}${base(cafeId)}/${id(tableId)}/qr.png?size=${size}`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  downloadQrPng(cafeId: string, tableId: string, size = 1024): Promise<Blob> {
+    return apiFetchBlob(
+      `${base(cafeId)}/${id(tableId)}/qr.png?size=${size}`,
+      'Gagal mengunduh QR meja.',
     );
-    if (!response.ok) {
-      throw new ApiError('Gagal mengunduh QR meja.', response.status);
-    }
-    return response.blob();
   },
 };

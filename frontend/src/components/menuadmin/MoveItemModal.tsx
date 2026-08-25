@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { MenuCategoryWithItems, MenuItem } from '../../types/menu';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
+import ModalScrollArea from '../common/ModalScrollArea';
 
 interface MoveItemModalProps {
   item: MenuItem;
@@ -21,6 +23,8 @@ export default function MoveItemModal({
 }: MoveItemModalProps) {
   const [targetId, setTargetId] = useState(item.categoryId);
 
+  useBodyScrollLock();
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -35,7 +39,7 @@ export default function MoveItemModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center overflow-hidden bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="pindah-item-title"
@@ -47,56 +51,60 @@ export default function MoveItemModal({
         className="absolute inset-0 cursor-default"
       />
 
-      <div className="relative max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-warm-cream p-5 shadow-2xl sm:rounded-3xl">
-        <h2 id="pindah-item-title" className="text-lg font-bold text-warm-espresso">
-          Pindahkan Item
-        </h2>
-        <p className="text-sm text-warm-muted">
-          <span className="font-semibold text-warm-subtle">{item.name}</span> sekarang
-          ada di kategori {currentName}.
-        </p>
+      <div className="relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-warm-cream shadow-2xl sm:rounded-3xl">
+        <div className="shrink-0 px-5 pt-5">
+          <h2 id="pindah-item-title" className="text-lg font-bold text-warm-espresso">
+            Pindahkan Item
+          </h2>
+          <p className="text-sm text-warm-muted">
+            <span className="font-semibold text-warm-subtle">{item.name}</span> sekarang
+            ada di kategori {currentName}.
+          </p>
+        </div>
 
-        <fieldset className="mt-4 space-y-2">
-          <legend className="sr-only">Pilih kategori tujuan</legend>
+        <ModalScrollArea className="px-5 pb-1">
+          <fieldset className="mt-4 space-y-2">
+            <legend className="sr-only">Pilih kategori tujuan</legend>
 
-          {categories.map((category) => {
-            const isCurrent = category.id === item.categoryId;
-            const selected = targetId === category.id;
+            {categories.map((category) => {
+              const isCurrent = category.id === item.categoryId;
+              const selected = targetId === category.id;
 
-            return (
-              <label
-                key={category.id}
-                className={`flex cursor-pointer items-center gap-3 rounded-2xl bg-warm-paper px-4 py-3 shadow-sm ring-1 transition ${
-                  selected ? 'ring-2 ring-warm-amber' : 'ring-warm-line hover:bg-warm-espresso/5'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="kategori-tujuan"
-                  value={category.id}
-                  checked={selected}
-                  onChange={() => setTargetId(category.id)}
-                  className="h-4 w-4 accent-warm-amber focus:ring-warm-amber"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-warm-espresso">
-                    {category.name}
+              return (
+                <label
+                  key={category.id}
+                  className={`flex cursor-pointer items-center gap-3 rounded-2xl bg-warm-paper px-4 py-3 shadow-sm ring-1 transition ${
+                    selected ? 'ring-2 ring-warm-amber' : 'ring-warm-line hover:bg-warm-espresso/5'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="kategori-tujuan"
+                    value={category.id}
+                    checked={selected}
+                    onChange={() => setTargetId(category.id)}
+                    className="h-4 w-4 accent-warm-amber focus:ring-warm-amber"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-warm-espresso">
+                      {category.name}
+                    </span>
+                    <span className="block text-xs text-warm-muted">
+                      {category.items.length} item
+                    </span>
                   </span>
-                  <span className="block text-xs text-warm-muted">
-                    {category.items.length} item
-                  </span>
-                </span>
-                {isCurrent && (
-                  <span className="shrink-0 rounded-full bg-warm-espresso/5 px-2 py-0.5 text-[11px] font-semibold text-warm-muted">
-                    Saat ini
-                  </span>
-                )}
-              </label>
-            );
-          })}
-        </fieldset>
+                  {isCurrent && (
+                    <span className="shrink-0 rounded-full bg-warm-espresso/5 px-2 py-0.5 text-[11px] font-semibold text-warm-muted">
+                      Saat ini
+                    </span>
+                  )}
+                </label>
+              );
+            })}
+          </fieldset>
+        </ModalScrollArea>
 
-        <div className="mt-5 flex gap-3">
+        <div className="flex shrink-0 gap-3 px-5 pb-5 pt-4">
           <button
             type="button"
             onClick={onClose}

@@ -66,3 +66,9 @@ export function parseMidtransBuatInput(body: unknown): { orderId: string } {
   const obj = asRecord(body);
   return { orderId: requireOrderId(obj.orderId) };
 }
+
+/** Body untuk membuat pembayaran DOKU Checkout. */
+export function parseDokuBuatInput(body: unknown): { orderId: string } {
+  const obj = asRecord(body);
+  return { orderId: requireOrderId(obj.orderId) };
+}

@@ -29,8 +29,16 @@ export default function CashierPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const cafeId = user?.cafeId ?? '';
-  const { pending, totalPending, loading, error, reload, markPaidManual } =
-    useCashierOrders(cafeId);
+  const {
+    pending,
+    totalPending,
+    loading,
+    error,
+    reload,
+    realtimeStatus,
+    retryRealtime,
+    markPaidManual,
+  } = useCashierOrders(cafeId);
   const { config, error: configError } = usePaymentConfig(cafeId);
 
   const [query, setQuery] = useState('');
@@ -170,6 +178,19 @@ export default function CashierPage() {
             action={{ label: 'Coba lagi', onClick: reload }}
           >
             {error}
+          </AlertBanner>
+        )}
+
+        {/* Realtime menyerah setelah beberapa percobaan. Antrean tetap jalan
+            lewat polling, jadi ini peringatan — bukan galat yang memblokir. */}
+        {realtimeStatus === 'offline' && (
+          <AlertBanner
+            tone="warning"
+            title="Pembaruan langsung terputus"
+            action={{ label: 'Sambungkan ulang', onClick: retryRealtime }}
+          >
+            Antrean tetap diperbarui otomatis tiap beberapa detik, hanya tidak
+            seketika. Pembayaran dan cetak struk tidak terpengaruh.
           </AlertBanner>
         )}
 

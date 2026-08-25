@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { CafeTable } from '../../types/table';
 import { useQrDataUrl } from '../../hooks/useQrDataUrl';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { downloadTableQrCard, tableMenuUrl } from '../../lib/tableQr';
+import ModalScrollArea from '../common/ModalScrollArea';
 
 interface TableQrModalProps {
   table: CafeTable;
@@ -26,6 +28,8 @@ export default function TableQrModal({
   const [downloading, setDownloading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useBodyScrollLock();
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -63,7 +67,7 @@ export default function TableQrModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center overflow-hidden bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="qr-meja-title"
@@ -75,8 +79,8 @@ export default function TableQrModal({
         className="absolute inset-0 cursor-default"
       />
 
-      <div className="relative max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-warm-cream p-5 shadow-2xl sm:rounded-3xl">
-        <div className="mb-4 flex items-start justify-between gap-3">
+      <div className="relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-warm-cream shadow-2xl sm:rounded-3xl">
+        <div className="flex shrink-0 items-start justify-between gap-3 px-5 pb-4 pt-5">
           <div>
             <h2 id="qr-meja-title" className="text-lg font-bold text-warm-espresso">
               QR {table.tableName}
@@ -95,50 +99,52 @@ export default function TableQrModal({
           </button>
         </div>
 
-        {/* Kartu QR tetap berlatar putih agar kontras pemindaian maksimal. */}
-        <div className="flex flex-col items-center rounded-2xl bg-white p-5 shadow-sm ring-1 ring-warm-line">
-          {preview ? (
-            <img
-              src={preview}
-              alt={`QR code ${table.tableName}`}
-              width={320}
-              height={320}
-              className="h-auto w-full max-w-[320px]"
+        <ModalScrollArea className="px-5 pb-1">
+          {/* Kartu QR tetap berlatar putih agar kontras pemindaian maksimal. */}
+          <div className="flex flex-col items-center rounded-2xl bg-white p-5 shadow-sm ring-1 ring-warm-line">
+            {preview ? (
+              <img
+                src={preview}
+                alt={`QR code ${table.tableName}`}
+                width={320}
+                height={320}
+                className="h-auto w-full max-w-[320px]"
+              />
+            ) : (
+              <div className="flex aspect-square w-full max-w-[320px] items-center justify-center rounded-xl bg-warm-espresso/5 text-sm text-warm-muted">
+                Membuat QR…
+              </div>
+            )}
+
+            <p className="mt-3 text-center text-sm text-warm-muted">
+              Pelanggan memindai QR ini untuk membuka menu {table.tableName}.
+            </p>
+          </div>
+
+          <label htmlFor="qr-url" className="mt-4 mb-1 block text-sm font-medium text-warm-subtle">
+            Tautan di dalam QR
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="qr-url"
+              readOnly
+              value={url}
+              onFocus={(event) => event.target.select()}
+              className="w-full rounded-xl border-0 bg-warm-paper px-3.5 py-2.5 font-mono text-xs text-warm-subtle shadow-sm ring-1 ring-warm-line focus:outline-none focus:ring-2 focus:ring-warm-amber"
             />
-          ) : (
-            <div className="flex aspect-square w-full max-w-[320px] items-center justify-center rounded-xl bg-warm-espresso/5 text-sm text-warm-muted">
-              Membuat QR…
-            </div>
-          )}
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="shrink-0 rounded-xl bg-warm-espresso/10 px-3.5 text-sm font-semibold text-warm-subtle transition hover:bg-warm-espresso/20"
+            >
+              {copied ? 'Tersalin' : 'Salin'}
+            </button>
+          </div>
 
-          <p className="mt-3 text-center text-sm text-warm-muted">
-            Pelanggan memindai QR ini untuk membuka menu {table.tableName}.
-          </p>
-        </div>
+          {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
+        </ModalScrollArea>
 
-        <label htmlFor="qr-url" className="mt-4 mb-1 block text-sm font-medium text-warm-subtle">
-          Tautan di dalam QR
-        </label>
-        <div className="flex gap-2">
-          <input
-            id="qr-url"
-            readOnly
-            value={url}
-            onFocus={(event) => event.target.select()}
-            className="w-full rounded-xl border-0 bg-warm-paper px-3.5 py-2.5 font-mono text-xs text-warm-subtle shadow-sm ring-1 ring-warm-line focus:outline-none focus:ring-2 focus:ring-warm-amber"
-          />
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="shrink-0 rounded-xl bg-warm-espresso/10 px-3.5 text-sm font-semibold text-warm-subtle transition hover:bg-warm-espresso/20"
-          >
-            {copied ? 'Tersalin' : 'Salin'}
-          </button>
-        </div>
-
-        {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
-
-        <div className="mt-5 flex gap-3">
+        <div className="flex shrink-0 gap-3 px-5 pb-5 pt-4">
           <button
             type="button"
             onClick={onClose}

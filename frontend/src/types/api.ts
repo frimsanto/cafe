@@ -74,6 +74,25 @@ export interface PaymentConfigDTO {
   isProduction: boolean;
 }
 
+/**
+ * Metode yang tersedia di sebuah kafe (GET /api/cafes/:cafeId/pembayaran/opsi).
+ * Endpoint publik — dibaca halaman checkout pelanggan yang tidak login.
+ */
+export interface OpsiPembayaranDTO {
+  cafeId: string;
+  cafeName: string;
+  /** Kode metode manual yang diaktifkan kafe; dipakai bila Midtrans belum aktif. */
+  metodeDiterima: string[];
+  midtransAktif: boolean;
+  /**
+   * True bila DOKU Checkout aktif di platform. Global — kredensialnya milik
+   * Fessolution, bukan kafe, jadi tidak ada yang perlu disetel pemilik kafe.
+   * Backend lama belum mengirim field ini; `?` menjaga checkout tetap jalan
+   * (opsi DOKU sekadar tidak muncul) sampai servernya diperbarui.
+   */
+  dokuAktif?: boolean;
+}
+
 /** Hasil pembuatan transaksi Midtrans (POST /api/pembayaran/midtrans/buat). */
 export interface MidtransBuatDTO {
   snapToken: string;
@@ -84,10 +103,23 @@ export interface MidtransBuatDTO {
   isProduction: boolean;
 }
 
-/** Status transaksi Midtrans (GET /api/pembayaran/:midtransOrderId/status). */
+/** Hasil pembuatan tagihan DOKU (POST /api/pembayaran/doku/buat). */
+export interface DokuBuatDTO {
+  /** Halaman checkout DOKU — pelanggan diarahkan ke sini untuk membayar. */
+  paymentUrl: string;
+  /** `invoice_number` DOKU; halaman status juga menerimanya sebagai kunci. */
+  invoiceNumber: string;
+  grossAmount: number;
+}
+
+/** Status pembayaran sebuah pesanan (GET /api/pembayaran/:orderId/status). */
 export interface StatusPembayaranDTO {
+  /** MENUNGGU | LUNAS | GAGAL. */
   status: string;
   metodePembayaran: string | null;
   grossAmount: number;
   updatedAt: string;
+  cafeName: string;
+  /** Pesanan lengkap — halaman status pelanggan tidak perlu fetch tambahan. */
+  pesanan: OrderWithTableDTO;
 }

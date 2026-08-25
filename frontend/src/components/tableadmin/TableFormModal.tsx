@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
+import ModalScrollArea from '../common/ModalScrollArea';
 
 interface TableFormModalProps {
   /** Nama meja yang sudah dipakai (huruf kecil) untuk mencegah duplikat. */
@@ -30,6 +32,8 @@ export default function TableFormModal({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useBodyScrollLock();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -68,7 +72,7 @@ export default function TableFormModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center overflow-hidden bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="form-meja-title"
@@ -82,9 +86,9 @@ export default function TableFormModal({
 
       <form
         onSubmit={handleSubmit}
-        className="relative w-full max-w-md rounded-t-3xl bg-warm-cream p-5 shadow-2xl sm:rounded-3xl"
+        className="relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-warm-cream shadow-2xl sm:rounded-3xl"
       >
-        <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="flex shrink-0 items-start justify-between gap-3 px-5 pb-4 pt-5">
           <div>
             <h2 id="form-meja-title" className="text-lg font-bold text-warm-espresso">
               Tambah Meja
@@ -105,37 +109,39 @@ export default function TableFormModal({
           </button>
         </div>
 
-        <label htmlFor="nama-meja" className="mb-1 block text-sm font-medium text-warm-subtle">
-          Nama meja <span className="text-rose-500">*</span>
-        </label>
-        <input
-          id="nama-meja"
-          ref={inputRef}
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
-            setError(null);
-          }}
-          placeholder="mis. Meja 15 atau Bar 1"
-          aria-invalid={Boolean(error)}
-          aria-describedby={error ? 'nama-meja-error' : undefined}
-          className={`w-full rounded-xl border-0 bg-warm-paper px-3.5 py-2.5 text-sm text-warm-espresso shadow-sm ring-1 focus:outline-none focus:ring-2 ${
-            error
-              ? 'ring-rose-400 focus:ring-rose-500'
-              : 'ring-warm-line focus:ring-warm-amber'
-          }`}
-        />
-        {error ? (
-          <p id="nama-meja-error" className="mt-1 text-sm text-rose-600">
-            {error}
-          </p>
-        ) : (
-          <p className="mt-1 text-xs text-warm-muted">
-            Nama ini muncul di struk, layar dapur, dan halaman kasir.
-          </p>
-        )}
+        <ModalScrollArea className="px-5 pb-1">
+          <label htmlFor="nama-meja" className="mb-1 block text-sm font-medium text-warm-subtle">
+            Nama meja <span className="text-rose-500">*</span>
+          </label>
+          <input
+            id="nama-meja"
+            ref={inputRef}
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+              setError(null);
+            }}
+            placeholder="mis. Meja 15 atau Bar 1"
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? 'nama-meja-error' : undefined}
+            className={`w-full rounded-xl border-0 bg-warm-paper px-3.5 py-2.5 text-sm text-warm-espresso shadow-sm ring-1 focus:outline-none focus:ring-2 ${
+              error
+                ? 'ring-rose-400 focus:ring-rose-500'
+                : 'ring-warm-line focus:ring-warm-amber'
+            }`}
+          />
+          {error ? (
+            <p id="nama-meja-error" className="mt-1 text-sm text-rose-600">
+              {error}
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-warm-muted">
+              Nama ini muncul di struk, layar dapur, dan halaman kasir.
+            </p>
+          )}
+        </ModalScrollArea>
 
-        <div className="mt-5 flex gap-3">
+        <div className="flex shrink-0 gap-3 px-5 pb-5 pt-4">
           <button
             type="button"
             onClick={onClose}

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode, type SVGProps } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../auth/AuthContext';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { ROLE_LABEL, type UserRole } from '../../types/auth';
 
 /** Lebar rel dalam dua mode: ikon saja vs. ikon + label. */
@@ -213,6 +214,9 @@ export default function AppLayout({
   const location = useLocation();
   const [navOpen, setNavOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  // Laci navigasi ponsel menutupi halaman — kunci gulir halaman selama terbuka.
+  useBodyScrollLock(navOpen);
 
   // Simpan preferensi lipat agar bertahan saat halaman dimuat ulang.
   useEffect(() => {
@@ -692,7 +696,12 @@ export default function AppLayout({
             onClick={() => setNavOpen(false)}
             className="absolute inset-0 bg-warm-espresso/40"
           />
-          <aside className="absolute inset-y-0 left-0 w-64 shadow-xl">{drawer}</aside>
+          <aside
+            data-lenis-prevent
+            className="absolute inset-y-0 left-0 w-64 overflow-y-auto overscroll-contain shadow-xl"
+          >
+            {drawer}
+          </aside>
         </div>
       )}
 

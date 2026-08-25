@@ -1,5 +1,7 @@
 import type { DashboardPreferences, DashboardWidgetKey } from '../../types/dashboard';
 import { DEFAULT_PREFS, WIDGET_OPTIONS } from '../../lib/dashboardPrefs';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
+import ModalScrollArea from '../common/ModalScrollArea';
 
 interface DashboardSettingsPanelProps {
   prefs: DashboardPreferences;
@@ -51,9 +53,11 @@ export default function DashboardSettingsPanel({
     (opt) => prefs[opt.key] === DEFAULT_PREFS[opt.key],
   );
 
+  useBodyScrollLock();
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center overflow-hidden sm:items-center"
       style={{ fontFamily: 'var(--font-data)' }}
     >
       <button
@@ -65,10 +69,10 @@ export default function DashboardSettingsPanel({
       />
 
       <div
-        className="relative w-full max-w-lg rounded-t-3xl p-5 shadow-2xl sm:rounded-3xl"
+        className="relative flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl shadow-2xl sm:rounded-3xl"
         style={{ backgroundColor: 'var(--color-paper)', border: '1px solid var(--color-border)' }}
       >
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-5">
           <div>
             <h2
               style={{
@@ -97,37 +101,39 @@ export default function DashboardSettingsPanel({
           </button>
         </div>
 
-        <ul className="mt-4">
-          {WIDGET_OPTIONS.map((opt) => (
-            <li
-              key={opt.key}
-              className="flex items-center gap-3 py-3"
-              style={{ borderTop: '1px solid rgba(26,18,8,0.06)' }}
-            >
-              <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-lg"
-                style={{ backgroundColor: 'rgba(26,18,8,0.05)' }}
+        <ModalScrollArea className="px-5">
+          <ul className="mt-4">
+            {WIDGET_OPTIONS.map((opt) => (
+              <li
+                key={opt.key}
+                className="flex items-center gap-3 py-3"
+                style={{ borderTop: '1px solid rgba(26,18,8,0.06)' }}
               >
-                {opt.icon}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-espresso)' }}>
-                  {opt.label}
-                </p>
-                <p className="truncate" style={{ fontSize: 13, color: 'var(--color-muted)' }}>
-                  {opt.description}
-                </p>
-              </div>
-              <Toggle
-                checked={prefs[opt.key]}
-                onChange={(v) => onToggle(opt.key, v)}
-                label={`Tampilkan ${opt.label}`}
-              />
-            </li>
-          ))}
-        </ul>
+                <span
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-lg"
+                  style={{ backgroundColor: 'rgba(26,18,8,0.05)' }}
+                >
+                  {opt.icon}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-espresso)' }}>
+                    {opt.label}
+                  </p>
+                  <p className="truncate" style={{ fontSize: 13, color: 'var(--color-muted)' }}>
+                    {opt.description}
+                  </p>
+                </div>
+                <Toggle
+                  checked={prefs[opt.key]}
+                  onChange={(v) => onToggle(opt.key, v)}
+                  label={`Tampilkan ${opt.label}`}
+                />
+              </li>
+            ))}
+          </ul>
+        </ModalScrollArea>
 
-        <div className="mt-4 flex gap-2">
+        <div className="flex shrink-0 gap-2 px-5 pb-5 pt-4">
           <button
             type="button"
             onClick={onReset}

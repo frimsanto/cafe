@@ -3,37 +3,93 @@ import type { AuthPayload, AuthRole } from '../types/auth';
 import { AUTH_ROLES } from '../types/auth';
 
 const SECRET = process.env.JWT_SECRET ?? '';
-const EXPIRES_IN = process.env.JWT_EXPIRES_IN ?? '12h';
+
+/**
+ * Secret terpisah untuk refresh token. Bila kosong, jatuh kembali ke
+ * `JWT_SECRET` supaya deployment lama tetap berjalan tanpa konfigurasi baru —
+ * klaim `typ` di bawah yang mencegah refresh token dipakai sebagai token akses
+ * meski keduanya ditandatangani secret yang sama.
+ */
+const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || SECRET;
+
+/**
+ * Token akses sengaja berumur pendek: ia dikirim pada setiap permintaan dan
+ * disimpan di localStorage, jadi jendela penyalahgunaannya harus sempit.
+ * Umur panjang dipegang refresh token yang hanya dipakai saat memperbarui.
+ */
+const EXPIRES_IN = process.env.JWT_EXPIRES_IN ?? '15m';
+const REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN ?? '7d';
 
 /** Token hanya bisa dipakai bila secret dikonfigurasi. */
 export const jwtEnabled = SECRET.length > 0;
 
+/** Ambil klaim standar dari token yang sudah lolos verifikasi tanda tangan. */
+function readPayload(decoded: unknown): AuthPayload | null {
+  if (typeof decoded !== 'object' || decoded === null) return null;
+
+  const { userId, cafeId, role } = decoded as Record<string, unknown>;
+  if (
+    typeof userId !== 'string' ||
+    typeof cafeId !== 'string' ||
+    typeof role !== 'string' ||
+    !AUTH_ROLES.includes(role as AuthRole)
+  ) {
+    return null;
+  }
+  return { userId, cafeId, role: role as AuthRole };
+}
+
 /**
- * Terbitkan token akses. Dipakai endpoint login (fase Autentikasi);
- * disediakan di sini agar penerbitan & verifikasi memakai kontrak yang sama.
+ * Terbitkan token akses untuk header `Authorization: Bearer <token>`.
+ * Disediakan di sini agar penerbitan & verifikasi memakai kontrak yang sama.
  */
 export function signAccessToken(payload: AuthPayload): string {
   if (!jwtEnabled) throw new Error('JWT_SECRET belum dikonfigurasi');
-  return jwt.sign(payload, SECRET, { expiresIn: EXPIRES_IN } as jwt.SignOptions);
+  return jwt.sign({ ...payload, typ: 'access' }, SECRET, {
+    expiresIn: EXPIRES_IN,
+  } as jwt.SignOptions);
 }
 
-/** Verifikasi token; mengembalikan null bila tidak valid/kedaluwarsa. */
+/**
+ * Terbitkan refresh token berumur panjang. Token ini TIDAK diterima middleware
+ * autentikasi — satu-satunya kegunaannya adalah menukar diri dengan token akses
+ * baru lewat `POST /api/auth/refresh`.
+ */
+export function signRefreshToken(payload: AuthPayload): string {
+  if (!jwtEnabled) throw new Error('JWT_SECRET belum dikonfigurasi');
+  return jwt.sign({ ...payload, typ: 'refresh' }, REFRESH_SECRET, {
+    expiresIn: REFRESH_EXPIRES_IN,
+  } as jwt.SignOptions);
+}
+
+/**
+ * Verifikasi token akses; mengembalikan null bila tidak valid/kedaluwarsa.
+ *
+ * Refresh token ditolak secara eksplisit: bila `JWT_REFRESH_SECRET` tidak diisi
+ * keduanya memakai secret yang sama, sehingga tanpa pemeriksaan ini sebuah
+ * refresh token berumur 7 hari bisa dipakai langsung sebagai token akses.
+ * Token lama yang terbit sebelum klaim `typ` ada tetap diterima.
+ */
 export function verifyAccessToken(token: string): AuthPayload | null {
   if (!jwtEnabled) return null;
   try {
     const decoded = jwt.verify(token, SECRET);
     if (typeof decoded !== 'object' || decoded === null) return null;
+    if ((decoded as Record<string, unknown>).typ === 'refresh') return null;
+    return readPayload(decoded);
+  } catch {
+    return null;
+  }
+}
 
-    const { userId, cafeId, role } = decoded as Record<string, unknown>;
-    if (
-      typeof userId !== 'string' ||
-      typeof cafeId !== 'string' ||
-      typeof role !== 'string' ||
-      !AUTH_ROLES.includes(role as AuthRole)
-    ) {
-      return null;
-    }
-    return { userId, cafeId, role: role as AuthRole };
+/** Verifikasi refresh token; klaim `typ` wajib ada dan bernilai `refresh`. */
+export function verifyRefreshToken(token: string): AuthPayload | null {
+  if (!jwtEnabled) return null;
+  try {
+    const decoded = jwt.verify(token, REFRESH_SECRET);
+    if (typeof decoded !== 'object' || decoded === null) return null;
+    if ((decoded as Record<string, unknown>).typ !== 'refresh') return null;
+    return readPayload(decoded);
   } catch {
     return null;
   }

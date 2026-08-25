@@ -221,13 +221,15 @@ export default function KitchenDisplayPage() {
             {muted ? '🔇' : '🔔'}
           </button>
           <div className="rounded-xl bg-slate-800 px-4 py-2 text-center">
-            <p className="text-2xl font-extrabold leading-none tabular-nums">
+            <p className="text-3xl font-black leading-none tabular-nums">
               {orders.length}
             </p>
             <p className="text-xs uppercase tracking-wide text-slate-400">Aktif</p>
           </div>
           <div className="hidden text-right sm:block">
-            <p className="text-2xl font-bold tabular-nums text-brand-300">{clock}</p>
+            <p className="text-3xl font-black leading-none tabular-nums text-brand-300">
+              {clock}
+            </p>
             <p className="text-xs uppercase tracking-wide text-slate-400">
               Waktu sekarang
             </p>
@@ -267,11 +269,11 @@ export default function KitchenDisplayPage() {
       </header>
 
       {/* Grid tiket */}
-      <main className="p-5">
+      <main className="p-6">
         {error && (
           <div
             role="alert"
-            className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-rose-950 px-4 py-3 text-sm text-rose-200 ring-1 ring-rose-800"
+            className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-rose-950 px-4 py-3 text-sm text-rose-200 ring-1 ring-rose-800"
           >
             <span>{error}</span>
             <button
@@ -287,25 +289,29 @@ export default function KitchenDisplayPage() {
         {loading ? (
           <div
             role="status"
-            className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3"
           >
             <span className="sr-only">Memuat pesanan dapur…</span>
-            {Array.from({ length: 8 }, (_, index) => (
+            {Array.from({ length: 6 }, (_, index) => (
               <div
                 key={index}
                 aria-hidden
-                className="h-64 animate-pulse rounded-2xl bg-slate-800"
+                className="h-80 animate-pulse rounded-2xl bg-slate-800"
               />
             ))}
           </div>
         ) : orders.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-32 text-center text-slate-500">
-            <span className="text-6xl">🍽️</span>
-            <p className="mt-4 text-xl font-semibold">Belum ada pesanan masuk</p>
-            <p className="text-sm">Pesanan yang sudah dibayar akan muncul di sini.</p>
+          <div className="flex flex-col items-center justify-center py-32 text-center">
+            <span aria-hidden className="text-8xl">
+              👨‍🍳
+            </span>
+            <p className="mt-6 text-3xl font-black text-slate-300">Dapur Siap!</p>
+            <p className="mt-2 text-lg text-slate-500">
+              Pesanan yang masuk akan muncul otomatis di sini.
+            </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
             {orders.map((order) => (
               <KitchenOrderCard
                 key={order.id}

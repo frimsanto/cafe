@@ -1,4 +1,4 @@
-import type { KitchenStatus, PaymentMethodCode } from '../types/order';
+import type { KitchenStatus } from '../types/order';
 import type {
   CashierOrderDTO,
   OrderDTO,
@@ -29,7 +29,13 @@ export const ordersApi = {
     return apiFetch<PublicTableDTO>(`/api/tables/by-qr/${id(qrCode)}`);
   },
 
-  /** Buat pesanan baru (status awal: menunggu pembayaran). */
+  /**
+   * Buat pesanan baru (status awal: menunggu pembayaran).
+   *
+   * Pembayarannya sendiri dilakukan lewat `pembayaranApi` — pesanan tercatat
+   * di database SEBELUM uang berpindah, sehingga pembayaran yang berhasil tidak
+   * pernah kehilangan pesanannya.
+   */
   create(
     cafeId: string,
     tableId: string,
@@ -40,32 +46,12 @@ export const ordersApi = {
       body: JSON.stringify({ tableId, items }),
     });
   },
-
-  /** Bayar pesanan dari sisi pelanggan (QRIS / e-wallet). */
-  pay(cafeId: string, orderId: string, method: PaymentMethodCode): Promise<OrderDTO> {
-    return apiFetch<OrderDTO>(`${cafeBase(cafeId)}/orders/${id(orderId)}/pay`, {
-      method: 'POST',
-      body: JSON.stringify({ method }),
-    });
-  },
 };
 
 export const cashierApi = {
   /** Antrean pesanan yang menunggu konfirmasi pembayaran di kasir. */
   listPendingOrders(cafeId: string): Promise<CashierOrderDTO[]> {
     return apiFetch<CashierOrderDTO[]>(`${cafeBase(cafeId)}/cashier/orders`);
-  },
-
-  /** Konfirmasi pembayaran tunai/EDC; pesanan lanjut ke dapur. */
-  confirmPayment(
-    cafeId: string,
-    orderId: string,
-    method: PaymentMethodCode,
-  ): Promise<CashierOrderDTO> {
-    return apiFetch<CashierOrderDTO>(`${cafeBase(cafeId)}/cashier/orders/${id(orderId)}/pay`, {
-      method: 'POST',
-      body: JSON.stringify({ method }),
-    });
   },
 };
 

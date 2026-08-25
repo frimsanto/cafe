@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import type { Order } from '../../types/order';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
+import ModalScrollArea from '../common/ModalScrollArea';
 import ReceiptPreview from './ReceiptPreview';
 
 interface ReceiptPrintModalProps {
@@ -27,6 +29,8 @@ export default function ReceiptPrintModal({
   onDownloadPdf,
   onClose,
 }: ReceiptPrintModalProps) {
+  useBodyScrollLock();
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -37,7 +41,7 @@ export default function ReceiptPrintModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center overflow-hidden bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="struk-title"
@@ -50,7 +54,7 @@ export default function ReceiptPrintModal({
       />
 
       <div className="relative flex max-h-[92vh] w-full max-w-md flex-col rounded-t-3xl bg-warm-cream shadow-2xl sm:rounded-3xl">
-        <div className="print-hidden flex items-start justify-between gap-3 p-5 pb-3">
+        <div className="print-hidden flex shrink-0 items-start justify-between gap-3 p-5 pb-3">
           <div>
             <h2 id="struk-title" className="text-lg font-bold text-warm-espresso">
               Pratinjau Struk
@@ -71,11 +75,11 @@ export default function ReceiptPrintModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5">
+        <ModalScrollArea className="px-5">
           <ReceiptPreview order={order} cafeName={cafeName} cash={cash} />
-        </div>
+        </ModalScrollArea>
 
-        <div className="print-hidden flex flex-col gap-2 p-5 pt-4 sm:flex-row">
+        <div className="print-hidden flex shrink-0 flex-col gap-2 p-5 pt-4 sm:flex-row">
           <button
             type="button"
             onClick={onClose}

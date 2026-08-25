@@ -89,7 +89,9 @@ sengaja publik. Seluruh area staf/pemilik wajib membawa
 
 | Endpoint | Akses |
 | --- | --- |
-| `POST /api/auth/register`, `POST /api/auth/login` | Publik |
+| `POST /api/public/daftar` | Publik (permintaan pendaftaran, maks 5×/jam per IP) |
+| `POST /api/auth/login` | Publik |
+| `POST /api/auth/register` | **Ditutup** — selalu 410 (lihat di bawah) |
 | `GET /api/cafes/:cafeId/menu`, `/categories`, `/menu-items` | Publik (menu digital) |
 | `POST /api/cafes/:cafeId/orders` | Publik (pelanggan memesan) |
 | `POST /api/cafes/:cafeId/orders/:id/pay` | Publik (bayar di meja) |
@@ -104,6 +106,25 @@ sengaja publik. Seluruh area staf/pemilik wajib membawa
 | `POST/PATCH/DELETE …/menu-items*`, `…/categories*` | **OWNER** (kelola menu) |
 | `GET/POST/PATCH/DELETE /api/cafes/:cafeId/tables*` | **OWNER** (kelola meja & QR) |
 | `GET /api/cafes/:cafeId/cashier/*` | **KASIR, OWNER** |
+
+### Pendaftaran kafe baru (butuh persetujuan admin)
+
+Halaman `/daftar` **tidak lagi menerbitkan akun aktif**. Formulirnya mengirim
+`POST /api/public/daftar` dengan body `{ nama_cafe, nama_pemilik, email, no_hp,
+pesan? }`, dan yang tercipta hanya satu baris `tenant_registrations` berstatus
+`baru` — tanpa `cafes`, tanpa `users`, tanpa token. Kuotanya 5 permintaan per
+jam per IP (`middleware/rateLimit.ts`, hitungan di memori proses).
+
+Kafe baru menjadi aktif setelah admin menindaklanjuti pendaftarnya dari panel
+super admin, yang membaca tabel yang sama lewat koneksi terpisah — karena itu
+kolomnya bernama `nama_bisnis` dan `jenis_aplikasi` (kontrak panel yang
+melayani beberapa aplikasi), bukan `nama_cafe`. Statusnya berjalan
+`baru` → `dihubungi` → `aktif`, atau `batal`.
+
+Jalur lama sudah ditutup sampai ke akarnya: `authService.register` dan
+`parseRegisterInput` dihapus, dan `POST /api/auth/register` hanya membalas 410
+berisi penunjuk ke endpoint baru. Tidak ada lagi kode di backend yang bisa
+membuat kafe atau akun dari permintaan publik.
 
 ### Endpoint Fase 3
 

@@ -1,6 +1,11 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import Lenis from '@studio-freight/lenis';
+import {
+  MODAL_CLOSE_EVENT,
+  MODAL_OPEN_EVENT,
+  isScrollLocked,
+} from './hooks/useBodyScrollLock';
 import { CartProvider } from './cart/CartContext';
 import { AuthProvider } from './auth/AuthContext';
 import { TableSessionProvider } from './table/TableSessionContext';
@@ -10,7 +15,7 @@ import RegisterPage from './pages/RegisterPage';
 import MenuPage from './pages/MenuPage';
 import CartPage from './pages/CartPage';
 import CheckoutPage from './pages/CheckoutPage';
-import PaymentSuccessPage from './pages/PaymentSuccessPage';
+import PesananStatusPage from './pages/PesananStatusPage';
 import KitchenDisplayPage from './pages/KitchenDisplayPage';
 import DashboardPage from './pages/DashboardPage';
 import CafeMenuPage from './pages/CafeMenuPage';
@@ -46,11 +51,35 @@ export default function App() {
       duration: 1.2,
       easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
     });
+
+    // Lenis dihentikan selama ada modal terbuka. `body { overflow: hidden }`
+    // dari `useBodyScrollLock` hanya mencegah gulir dari pengguna — Lenis
+    // menggeser `documentElement.scrollTop` lewat kode, sehingga roda mouse di
+    // atas latar modal tetap menggeser halaman di belakangnya. Saat berhenti,
+    // Lenis menelan wheel & touch tanpa menggerakkan apa pun.
+    //
+    // Isi modal tidak ikut terkunci: `ModalScrollArea` menandai dirinya dengan
+    // `data-lenis-prevent`, dan Lenis memeriksa penanda itu lebih dulu daripada
+    // status berhentinya, jadi event di dalam modal dilewatkan ke gulir asli.
+    //
+    // `start()` memanggil `reset()` di dalam Lenis, yang menyelaraskan posisi
+    // internalnya ke posisi gulir sebenarnya — mencegah halaman melompat saat
+    // modal ditutup.
+    const pause = () => lenis.stop();
+    const resume = () => lenis.start();
+    window.addEventListener(MODAL_OPEN_EVENT, pause);
+    window.addEventListener(MODAL_CLOSE_EVENT, resume);
+    // Modal bisa sudah terbuka sebelum efek ini berjalan (StrictMode memasang
+    // ulang efek, atau HMR me-refresh App) — kuncinya harus tetap terbawa.
+    if (isScrollLocked()) lenis.stop();
+
     let rafId = requestAnimationFrame(function raf(time) {
       lenis.raf(time);
       rafId = requestAnimationFrame(raf);
     });
     return () => {
+      window.removeEventListener(MODAL_OPEN_EVENT, pause);
+      window.removeEventListener(MODAL_CLOSE_EVENT, resume);
       cancelAnimationFrame(rafId);
       lenis.destroy();
     };
@@ -96,11 +125,12 @@ export default function App() {
                 </CustomerRoute>
               }
             />
+            {/* Status pesanan & pembayaran — tujuan callback Snap dan jalur kasir */}
             <Route
-              path="/pesanan/sukses"
+              path="/pesanan/:orderId"
               element={
                 <CustomerRoute>
-                  <PaymentSuccessPage />
+                  <PesananStatusPage />
                 </CustomerRoute>
               }
             />

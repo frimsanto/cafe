@@ -12,6 +12,7 @@ import type {
   CreateMenuItemInput,
   UpdateMenuItemInput,
 } from '../validation/menu.validation';
+import { uploadService } from './upload.service';
 
 interface MenuItemFilter {
   categoryId?: string;
@@ -373,7 +374,7 @@ export const menuService = {
   async deleteMenuItem(itemId: string): Promise<{ id: string }> {
     const existing = await prisma.menuItem.findFirst({
       where: { id: itemId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, cafeId: true, imageUrl: true },
     });
     if (!existing) throw ApiError.notFound('Item menu tidak ditemukan');
 
@@ -381,6 +382,24 @@ export const menuService = {
       where: { id: itemId },
       data: { deletedAt: new Date() },
     });
+
+    // Barisnya memang disimpan, tapi fotonya tidak lagi dipakai di mana pun —
+    // biarkan menumpuk dan kuota Cloudinary habis oleh gambar yatim. Sengaja
+    // best-effort: item SUDAH terhapus dari sisi pengguna, jadi gangguan di
+    // penyimpanan tidak boleh mengubah hasil itu menjadi error.
+    const publicId = existing.imageUrl
+      ? uploadService.publicIdDariUrl(existing.imageUrl, existing.cafeId)
+      : null;
+    if (publicId) {
+      try {
+        await uploadService.hapusFotoMenu(existing.cafeId, publicId);
+      } catch (error) {
+        console.warn(
+          `[cafeos-backend] Foto menu ${publicId} gagal dihapus dari Cloudinary:`,
+          error,
+        );
+      }
+    }
 
     return { id: itemId };
   },

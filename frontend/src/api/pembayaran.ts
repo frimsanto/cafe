@@ -1,14 +1,20 @@
 import type { ManualMethodCode } from '../types/order';
 import type {
   CashierOrderDTO,
+  DokuBuatDTO,
   MidtransBuatDTO,
+  OpsiPembayaranDTO,
   PaymentConfigDTO,
   StatusPembayaranDTO,
 } from '../types/api';
 import { apiFetch } from '../lib/apiClient';
 
-// Endpoint jalur pembayaran dua rel: konfigurasi kafe + konfirmasi manual +
-// Midtrans. `cafeId` diambil backend dari token, jadi tidak dikirim di URL.
+// Endpoint pembayaran: konfigurasi kafe + Midtrans (jalur utama) + konfirmasi
+// manual oleh kasir (fallback bila kafe belum menyetel Midtrans).
+//
+// Endpoint staf mengambil `cafeId` dari token, jadi tidak dikirim di URL.
+// Endpoint pelanggan (`opsi`, `buatMidtrans`, `buatDoku`, `status`) publik —
+// tamu di meja tidak punya akun.
 
 const id = encodeURIComponent;
 
@@ -65,7 +71,12 @@ export const pembayaranApi = {
     ).then((res) => res.order);
   },
 
-  /** Buat transaksi Midtrans (Snap) untuk sebuah pesanan. */
+  /** Metode yang tersedia di sebuah kafe. PUBLIK — dipakai checkout pelanggan. */
+  opsi(cafeId: string): Promise<OpsiPembayaranDTO> {
+    return apiFetch<OpsiPembayaranDTO>(`/api/cafes/${id(cafeId)}/pembayaran/opsi`);
+  },
+
+  /** Buat transaksi Midtrans (Snap) untuk sebuah pesanan. PUBLIK. */
   buatMidtrans(orderId: string): Promise<MidtransBuatDTO> {
     return apiFetch<MidtransBuatDTO>('/api/pembayaran/midtrans/buat', {
       method: 'POST',
@@ -73,11 +84,26 @@ export const pembayaranApi = {
     });
   },
 
-  /** Status transaksi Midtrans (untuk polling). */
-  statusMidtrans(midtransOrderId: string): Promise<StatusPembayaranDTO> {
-    return apiFetch<StatusPembayaranDTO>(
-      `/api/pembayaran/${id(midtransOrderId)}/status`,
-    );
+  /**
+   * Buat tagihan DOKU Checkout untuk sebuah pesanan. PUBLIK.
+   *
+   * Tidak ada kredensial yang ikut dikirim: DOKU dipakai dengan akun platform,
+   * jadi server yang memegang seluruh rahasianya.
+   */
+  buatDoku(orderId: string): Promise<DokuBuatDTO> {
+    return apiFetch<DokuBuatDTO>('/api/pembayaran/doku/buat', {
+      method: 'POST',
+      body: JSON.stringify({ orderId }),
+    });
+  },
+
+  /**
+   * Status pembayaran sebuah pesanan (untuk polling). PUBLIK. Menerima id
+   * pesanan CafeOS maupun `order_id` Midtrans — halaman pelanggan memegang yang
+   * pertama, callback Snap mengembalikan yang kedua.
+   */
+  status(orderId: string): Promise<StatusPembayaranDTO> {
+    return apiFetch<StatusPembayaranDTO>(`/api/pembayaran/${id(orderId)}/status`);
   },
 
   /** Riwayat pembayaran kafe. */

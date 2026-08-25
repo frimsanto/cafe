@@ -198,6 +198,9 @@ model Order {
   // Diisi jalur Midtrans: `order_id` yang dikirim ke Snap + token transaksinya.
   midtransOrderId  String?  @map("midtrans_order_id")
   snapToken        String?  @map("snap_token")
+  // Diisi jalur DOKU Checkout: `invoice_number` yang dikirim ke DOKU. Jadi kunci
+  // pencocokan saat notifikasi (webhook) datang, sebagaimana `midtransOrderId`.
+  dokuInvoiceNumber String? @map("doku_invoice_number")
   // Status pembayaran versi domain baru (string, lintas jalur manual & Midtrans):
   // MENUNGGU | LUNAS | GAGAL. Melengkapi `payment.status` (enum jalur lama).
   statusPembayaran String?  @default("MENUNGGU") @map("status_pembayaran")
@@ -225,6 +228,8 @@ model Order {
   @@index([cafeId, paidAt])
   // Pencarian pesanan dari webhook / polling Midtrans lewat order_id gateway.
   @@index([midtransOrderId])
+  // Pencarian pesanan dari webhook DOKU lewat invoice_number.
+  @@index([dokuInvoiceNumber])
   @@map("orders")
 }
 
@@ -325,4 +330,41 @@ model PushSubscription {
 
   @@index([orderId])
   @@map("push_subscriptions")
+}
+
+// ── Pendaftaran tenant (calon kafe) ──────────────────────────────────────────
+
+/// Permintaan pendaftaran dari formulir publik `/daftar`.
+///
+/// Baris di sini BUKAN akun: tidak ada `cafes` maupun `users` yang lahir
+/// darinya. Kafe baru hanya boleh aktif setelah admin menindaklanjuti
+/// pendaftarannya — panel super admin (fessolution.my.id) membaca tabel yang
+/// sama lewat koneksi terpisah dan menaikkan statusnya dari sana.
+///
+/// CATATAN NAMA KOLOM: `nama_bisnis` dan `jenis_aplikasi` mengikuti kontrak
+/// panel super admin yang melayani beberapa aplikasi sekaligus — jangan
+/// diganti menjadi `nama_cafe` tanpa mengubah panel itu juga, karena query-nya
+/// menyebut kolom ini secara eksplisit.
+model TenantRegistration {
+  id            String   @id @default(uuid()) @db.Uuid
+  namaBisnis    String   @map("nama_bisnis")
+  namaPemilik   String   @map("nama_pemilik")
+  email         String
+  noHp          String?  @map("no_hp")
+  /// Aplikasi yang didaftar; formulir CafeOS selalu mengisi "CafeOS".
+  jenisAplikasi String   @default("CafeOS") @map("jenis_aplikasi")
+  pesan         String?
+  /// Alur tindak lanjut admin: `baru` → `dihubungi` → `aktif`, atau `batal`.
+  /// Sengaja TEXT, bukan enum: panel super admin menulis statusnya sebagai
+  /// teks biasa, dan menambah label baru di sana tidak boleh menuntut migrasi
+  /// tipe di aplikasi ini. Nilainya dijaga CHECK constraint yang dipasang di
+  /// migrasi `20260825000000_tambah_tenant_registrations` — Prisma belum bisa
+  /// menyatakan CHECK di schema, jadi jangan hapus saat `prisma migrate dev`.
+  status        String   @default("baru")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Panel admin menyaring per status dan mengurutkan terbaru dulu.
+  @@index([status])
+  @@index([createdAt])
+  @@map("tenant_registrations")
 }

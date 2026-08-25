@@ -13,7 +13,17 @@ export function createApp() {
   const app = express();
 
   app.use(cors());
-  app.use(express.json());
+  // Simpan body MENTAH di samping hasil parse. Webhook DOKU menandatangani
+  // digest SHA-256 atas byte yang dikirimnya; menyusun ulang JSON dari objek
+  // hasil parse menghasilkan byte berbeda (spasi/urutan kunci) dan akan membuat
+  // notifikasi yang sah ikut tertolak.
+  app.use(
+    express.json({
+      verify: (req, _res, buf) => {
+        (req as Request & { rawBody?: string }).rawBody = buf.toString('utf8');
+      },
+    }),
+  );
 
   // Liveness — server hidup.
   app.get('/health', (_req: Request, res: Response) => {

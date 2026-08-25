@@ -1,7 +1,6 @@
 import type { RevenueSummaryDTO, TopMenuItemDTO } from '../types/api';
 import type { DashboardPreferences, RevenuePeriod } from '../types/dashboard';
-import { API_BASE_URL } from '../lib/apiConfig';
-import { apiFetch, readAuthToken, ApiError } from '../lib/apiClient';
+import { apiFetch, apiFetchBlob } from '../lib/apiClient';
 
 // Endpoint dasbor pemilik. Omzet & menu terlaris dihitung per periode; hanya
 // pesanan dengan pembayaran SUKSES yang dihitung sebagai omzet.
@@ -51,15 +50,10 @@ export const receiptsApi = {
    * Struk PDF siap cetak. Sama seperti QR meja, endpointnya butuh header
    * Authorization sehingga harus diambil lewat fetch, bukan tautan langsung.
    */
-  async downloadPdf(cafeId: string, orderId: string): Promise<Blob> {
-    const token = readAuthToken();
-    const response = await fetch(
-      `${API_BASE_URL}${cafeBase(cafeId)}/orders/${id(orderId)}/receipt`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  downloadPdf(cafeId: string, orderId: string): Promise<Blob> {
+    return apiFetchBlob(
+      `${cafeBase(cafeId)}/orders/${id(orderId)}/receipt`,
+      'Gagal mengunduh struk.',
     );
-    if (!response.ok) {
-      throw new ApiError('Gagal mengunduh struk.', response.status);
-    }
-    return response.blob();
   },
 };

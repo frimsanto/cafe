@@ -17,27 +17,29 @@ export default function KitchenItemRow({ item, onStatusChange }: KitchenItemRowP
   const done = item.kitchenStatus === 'READY';
 
   return (
-    <li className="py-3">
+    <li className="py-4">
       <div className="flex items-start gap-3">
-        <span className={`mt-1.5 h-3.5 w-3.5 shrink-0 rounded-full ${meta.accentClass}`} aria-hidden />
-        <span className="flex h-10 min-w-10 shrink-0 items-center justify-center rounded-lg bg-slate-700 px-2 text-xl font-extrabold tabular-nums text-white">
+        <span className={`mt-2 h-4 w-4 shrink-0 rounded-full ${meta.accentClass}`} aria-hidden />
+        <span className="flex h-12 min-w-12 shrink-0 items-center justify-center rounded-xl bg-slate-700 px-2 text-2xl font-black tabular-nums text-white">
           {item.quantity}
         </span>
         <div className="min-w-0 flex-1">
           <p
-            className={`text-xl font-bold leading-tight ${
+            className={`text-2xl font-bold leading-tight ${
               done ? 'text-slate-500 line-through' : 'text-white'
             }`}
           >
             {item.name}
           </p>
           {item.notes && (
-            <p className="mt-1 text-base font-semibold text-amber-300">📝 {item.notes}</p>
+            <p className="mt-2 rounded-lg bg-amber-500/20 px-3 py-1.5 text-base font-bold text-amber-300 ring-1 ring-amber-500/30">
+              📝 {item.notes}
+            </p>
           )}
         </div>
       </div>
 
-      <div className="mt-2.5">
+      <div className="mt-3">
         <KitchenStatusControl value={item.kitchenStatus} onChange={onStatusChange} />
       </div>
     </li>

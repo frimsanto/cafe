@@ -1,80 +1,273 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { ManualMethodCode } from '../types/order';
+import type { OpsiPembayaranDTO } from '../types/api';
 import { useCart } from '../cart/CartContext';
 import { formatRupiah } from '../lib/format';
-import { paymentMethods } from '../data/paymentMethods';
-import type { PaymentMethodCode } from '../types/order';
-import { saveLastOrder } from '../order/orderStore';
 import { ordersApi } from '../api/orders';
+import { pembayaranApi } from '../api/pembayaran';
+import { payWithSnap } from '../lib/midtransSnap';
 import { describeApiError } from '../lib/apiClient';
 import { useTableSession } from '../table/TableSessionContext';
-import PaymentMethodOption from '../components/checkout/PaymentMethodOption';
-import PaymentSimulationModal from '../components/checkout/PaymentSimulationModal';
+import ManualMethodModal from '../components/checkout/ManualMethodModal';
+
+/** Jalur pembayaran yang bisa dipilih pelanggan di layar ini. */
+type Jalur = 'MIDTRANS' | 'DOKU' | 'MANUAL';
+
+interface JalurInfo {
+  ikon: string;
+  nama: string;
+  keterangan: string;
+  /** Label tombol bayar saat jalur ini yang dipilih. */
+  tombol: string;
+}
+
+// Katalog tampilan tiap jalur. Urutan kunci di sini juga urutan tampilnya —
+// gateway otomatis lebih dulu, bayar-di-kasir paling bawah, karena jalur manual
+// menahan pesanan sampai ada kasir yang mengonfirmasi.
+const JALUR: Record<Jalur, JalurInfo> = {
+  MIDTRANS: {
+    ikon: '🔵',
+    nama: 'QRIS, GoPay, Virtual Account, Kartu',
+    keterangan: 'Pilih metodenya di layar pembayaran yang akan terbuka.',
+    tombol: 'Bayar Sekarang',
+  },
+  DOKU: {
+    ikon: '🟣',
+    nama: 'DOKU Checkout',
+    keterangan: 'QRIS, Virtual Account, dan e-wallet lewat halaman DOKU.',
+    tombol: 'Lanjut ke DOKU',
+  },
+  MANUAL: {
+    ikon: '🧾',
+    nama: 'Bayar di kasir',
+    keterangan: 'Tunai, QRIS statis, transfer, atau kartu — dikonfirmasi kasir.',
+    tombol: 'Bayar di Kasir',
+  },
+};
 
 /**
- * Halaman checkout & simulasi pembayaran di meja.
+ * Halaman checkout pelanggan.
  *
- * Alur: tinjau ringkasan pesanan → pilih metode (QRIS/GoPay/Kartu) → tekan
- * "Bayar Sekarang" → modal simulasi. Saat simulasi sukses, order dibuat &
- * disimpan, keranjang dikosongkan, lalu diarahkan ke halaman sukses.
+ * Alurnya satu rel: pesanan dicatat dulu lewat `POST /orders` (status
+ * MENUNGGU_PEMBAYARAN), baru dibayar. Urutan ini penting — pesanan tercatat di
+ * database sebelum uang berpindah, sehingga pembayaran yang berhasil tidak
+ * pernah kehilangan pesanannya.
  *
- * Pesanan dibuat lebih dulu lewat `POST /orders` (status MENUNGGU_PEMBAYARAN),
- * baru dibayar lewat `/pay`. Urutan ini penting: pesanan tercatat di database
- * sebelum uang berpindah, sehingga pembayaran yang berhasil tidak pernah
- * kehilangan pesanannya.
+ * Setelah pesanan ada, pelanggan memilih salah satu dari tiga jalur — yang
+ * ditawarkan hanya yang memang tersedia menurut `GET .../pembayaran/opsi`:
+ *   - Midtrans → popup Snap terbuka (QRIS dinamis, GoPay, VA, kartu). Aktif
+ *     bila kafe menyetel kredensialnya sendiri.
+ *   - DOKU Checkout → pelanggan diarahkan ke halaman bayar milik DOKU. Ini
+ *     gateway platform (kredensial Fessolution), jadi tersedia untuk kafe yang
+ *     tidak punya akun gateway sendiri.
+ *   - Manual → pesanan dititipkan ke kasir untuk dikonfirmasi.
+ *
+ * Apa pun jalurnya, yang menentukan lunas adalah server: kedua jalur gateway
+ * sama-sama bermuara di halaman status yang melakukan polling.
+ *
+ * Id pesanan yang sudah dibuat disimpan (`orderIdRef`) supaya percobaan bayar
+ * berikutnya memakai pesanan yang sama — batal bayar tidak menumpuk pesanan
+ * kembar di antrean kasir. Ini juga yang membuat pelanggan bebas berpindah
+ * jalur (mis. gagal di DOKU lalu memilih kasir) tanpa menggandakan pesanan.
  */
 export default function CheckoutPage() {
   const { lines, totalItems, totalAmount, clearCart } = useCart();
   const { table } = useTableSession();
   const navigate = useNavigate();
 
-  const [selectedMethod, setSelectedMethod] = useState<PaymentMethodCode>(
-    paymentMethods[0].code,
-  );
-  const [showModal, setShowModal] = useState(false);
+  const [opsi, setOpsi] = useState<OpsiPembayaranDTO | null>(null);
+  const [opsiError, setOpsiError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [jalur, setJalur] = useState<Jalur | null>(null);
 
-  // Seed QR simulasi — tetap sama selama sesi checkout ini.
-  const seed = useMemo(() => `${table?.tableId ?? 'meja'}-${Date.now()}`, [table]);
+  /** Pesanan yang sudah terlanjur dibuat di server pada percobaan sebelumnya. */
+  const orderIdRef = useRef<string | null>(null);
 
-  // Kalau keranjang kosong (mis. dibuka langsung / setelah bayar), balik ke menu.
+  // Kalau keranjang kosong (mis. halaman dibuka langsung), balik ke menu.
+  // Keranjang yang dikosongkan SETELAH pesanan dibuat tidak dihitung — saat itu
+  // kita memang sedang berpindah ke halaman status, bukan tersesat di checkout.
   useEffect(() => {
-    if (lines.length === 0) navigate('/menu', { replace: true });
+    if (lines.length === 0 && !orderIdRef.current) {
+      navigate('/menu', { replace: true });
+    }
   }, [lines.length, navigate]);
+
+  // Metode yang tersedia di kafe ini — menentukan Midtrans atau fallback manual.
+  useEffect(() => {
+    const cafeId = table?.cafeId;
+    if (!cafeId) return;
+    let cancelled = false;
+
+    pembayaranApi
+      .opsi(cafeId)
+      .then((data) => {
+        if (cancelled) return;
+        setOpsi(data);
+        setOpsiError(null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setOpsiError(
+          describeApiError(err, 'Gagal memuat metode pembayaran kafe ini.'),
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [table?.cafeId]);
+
+  // Jalur yang benar-benar bisa dipakai di kafe ini. Midtrans & DOKU muncul
+  // hanya bila gateway-nya aktif; manual hanya bila kafe memang menerima metode
+  // manual. Daftar kosong = kafe belum bisa menagih apa pun.
+  const tersedia = useMemo<Jalur[]>(() => {
+    if (!opsi) return [];
+    const daftar: Jalur[] = [];
+    if (opsi.midtransAktif) daftar.push('MIDTRANS');
+    if (opsi.dokuAktif) daftar.push('DOKU');
+    if (opsi.metodeDiterima.length > 0) daftar.push('MANUAL');
+    return daftar;
+  }, [opsi]);
+
+  // Pilihan awal jatuh ke jalur teratas yang tersedia. Pilihan pelanggan
+  // dipertahankan selama masih tersedia — supaya opsi yang datang belakangan
+  // (mis. `opsi` di-fetch ulang) tidak diam-diam memindahkan pilihannya.
+  useEffect(() => {
+    setJalur((prev) => (prev && tersedia.includes(prev) ? prev : (tersedia[0] ?? null)));
+  }, [tersedia]);
+
+  /** Buat pesanan bila belum ada; pakai ulang bila percobaan sebelumnya gagal. */
+  const pastikanOrder = useCallback(async (): Promise<string> => {
+    if (orderIdRef.current) return orderIdRef.current;
+    if (!table) throw new Error('Meja belum dikenali. Pindai ulang QR di meja kamu.');
+
+    const created = await ordersApi.create(
+      table.cafeId,
+      table.tableId,
+      lines.map((line) => ({
+        menuItemId: line.item.id,
+        quantity: line.quantity,
+        notes: line.notes,
+      })),
+    );
+    orderIdRef.current = created.id;
+    return created.id;
+  }, [table, lines]);
+
+  /** Pindah ke halaman status pesanan; keranjang dikosongkan di sini. */
+  const keStatus = useCallback(
+    (orderId: string, status?: 'sukses' | 'menunggu') => {
+      clearCart();
+      navigate(`/pesanan/${orderId}${status ? `?status=${status}` : ''}`, {
+        replace: true,
+      });
+    },
+    [clearCart, navigate],
+  );
+
+  /** Jalur utama: buat transaksi Snap lalu buka popup Midtrans. */
+  const bayarMidtrans = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const orderId = await pastikanOrder();
+      const tx = await pembayaranApi.buatMidtrans(orderId);
+
+      if (!tx.clientKey) {
+        setError(
+          'Pembayaran online kafe ini belum lengkap dikonfigurasi. Silakan bayar di kasir.',
+        );
+        return;
+      }
+
+      payWithSnap({
+        snapToken: tx.snapToken,
+        clientKey: tx.clientKey,
+        isProduction: tx.isProduction,
+        onSuccess: () => keStatus(orderId, 'sukses'),
+        onPending: () => keStatus(orderId, 'menunggu'),
+        // Snap sudah tertutup saat callback ini jalan — pelanggan tetap di
+        // checkout dan bisa mencoba lagi dengan pesanan yang sama.
+        onError: () =>
+          setError('Pembayaran gagal diproses. Silakan coba lagi.'),
+        // Popup ditutup sendiri: pesanan sudah ada, jadi arahkan ke halamannya.
+        onClose: () => keStatus(orderId),
+      });
+    } catch (err) {
+      setError(describeApiError(err, 'Pembayaran gagal dimulai. Coba lagi.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Jalur DOKU: terbitkan tagihan lalu tinggalkan aplikasi menuju halaman bayar
+   * milik DOKU.
+   *
+   * Halaman status didorong ke riwayat SEBELUM berpindah. Urutan ini yang
+   * membuat tombol "kembali" dari halaman DOKU mendarat di status pesanan yang
+   * sudah melakukan polling — bukan di checkout dengan keranjang yang telanjur
+   * dikosongkan. `busy` sengaja tidak dilepas pada jalur sukses: halaman memang
+   * sedang ditinggalkan, dan tombolnya harus tetap mati sampai itu terjadi.
+   */
+  const bayarDoku = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const orderId = await pastikanOrder();
+      const tagihan = await pembayaranApi.buatDoku(orderId);
+      keStatus(orderId, 'menunggu');
+      window.location.assign(tagihan.paymentUrl);
+    } catch (err) {
+      setError(describeApiError(err, 'Pembayaran DOKU gagal dimulai. Coba lagi.'));
+      setBusy(false);
+    }
+  };
+
+  /** Jalur manual: pesanan dititipkan ke kasir untuk dikonfirmasi. */
+  const kirimKeKasir = async (_metode: ManualMethodCode) => {
+    setError(null);
+    setBusy(true);
+    try {
+      const orderId = await pastikanOrder();
+      setManualOpen(false);
+      keStatus(orderId);
+    } catch (err) {
+      setError(describeApiError(err, 'Pesanan gagal dikirim. Coba lagi.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleBayar = () => {
+    if (busy) return;
+    if (!table) {
+      setError('Meja belum dikenali. Pindai ulang QR di meja kamu.');
+      return;
+    }
+    if (!opsi) {
+      setError(opsiError ?? 'Metode pembayaran belum siap. Tunggu sebentar.');
+      return;
+    }
+    if (!jalur) {
+      setError('Kafe ini belum menerima pembayaran. Hubungi kasir.');
+      return;
+    }
+    if (jalur === 'MIDTRANS') void bayarMidtrans();
+    else if (jalur === 'DOKU') void bayarDoku();
+    else setManualOpen(true);
+  };
 
   if (lines.length === 0) return null;
 
-  const activeMethod = paymentMethods.find((m) => m.code === selectedMethod)!;
-
-  const handlePaymentSuccess = async () => {
-    if (!table) {
-      setError('Meja belum dikenali. Pindai ulang QR di meja kamu.');
-      setShowModal(false);
-      return;
-    }
-
-    try {
-      const created = await ordersApi.create(
-        table.cafeId,
-        table.tableId,
-        lines.map((line) => ({
-          menuItemId: line.item.id,
-          quantity: line.quantity,
-          notes: line.notes,
-        })),
-      );
-      const paid = await ordersApi.pay(table.cafeId, created.id, selectedMethod);
-
-      // Simpan pesanan versi server — id & id transaksinya yang dipakai struk.
-      saveLastOrder({ ...paid, tableName: table.tableName });
-      clearCart();
-      setShowModal(false);
-      navigate('/pesanan/sukses', { replace: true });
-    } catch (err) {
-      setShowModal(false);
-      setError(describeApiError(err, 'Pesanan gagal diproses. Coba lagi.'));
-    }
-  };
+  const tombolLabel = busy
+    ? 'Memproses…'
+    : jalur
+      ? JALUR[jalur].tombol
+      : 'Bayar Sekarang';
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col bg-slate-100 shadow-xl">
@@ -107,6 +300,15 @@ export default function CheckoutPage() {
           </p>
         )}
 
+        {opsiError && !error && (
+          <p
+            role="alert"
+            className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          >
+            {opsiError}
+          </p>
+        )}
+
         {/* Ringkasan pesanan */}
         <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
@@ -134,21 +336,66 @@ export default function CheckoutPage() {
           </ul>
         </section>
 
-        {/* Metode pembayaran */}
-        <section>
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-400">
-            Metode Pembayaran
+        {/* Cara bayar — pelanggan memilih di antara jalur yang tersedia */}
+        <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
+            Pilih metode pembayaran
           </h2>
-          <div className="space-y-2.5">
-            {paymentMethods.map((method) => (
-              <PaymentMethodOption
-                key={method.code}
-                method={method}
-                selected={method.code === selectedMethod}
-                onSelect={() => setSelectedMethod(method.code)}
-              />
-            ))}
-          </div>
+          {!opsi ? (
+            <div className="h-16 animate-pulse rounded-xl bg-slate-100" />
+          ) : tersedia.length === 0 ? (
+            <div className="flex items-center gap-3 rounded-2xl bg-amber-50 p-3.5">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-xl shadow-sm">
+                🧾
+              </span>
+              <div className="min-w-0">
+                <p className="font-semibold text-slate-900">Belum ada metode aktif</p>
+                <p className="text-sm text-slate-600">
+                  Kafe ini belum menyiapkan cara pembayaran. Hubungi kasir.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div role="radiogroup" aria-label="Metode pembayaran" className="grid gap-2">
+              {tersedia.map((kode) => {
+                const info = JALUR[kode];
+                const dipilih = jalur === kode;
+                return (
+                  <button
+                    key={kode}
+                    type="button"
+                    role="radio"
+                    aria-checked={dipilih}
+                    disabled={busy}
+                    onClick={() => {
+                      setJalur(kode);
+                      setError(null);
+                    }}
+                    className={`flex w-full items-center gap-3 rounded-2xl border-2 p-3.5 text-left transition disabled:cursor-not-allowed ${
+                      dipilih
+                        ? 'border-brand-500 bg-brand-50/40 ring-2 ring-brand-100'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xl">
+                      {info.ikon}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold text-slate-900">{info.nama}</span>
+                      <span className="block text-sm text-slate-500">{info.keterangan}</span>
+                    </span>
+                    <span
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+                        dipilih ? 'border-brand-600 bg-brand-600' : 'border-slate-300'
+                      }`}
+                    >
+                      {dipilih && <span className="h-2 w-2 rounded-full bg-white" />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </section>
       </main>
 
@@ -162,21 +409,22 @@ export default function CheckoutPage() {
         </div>
         <button
           type="button"
-          onClick={() => setShowModal(true)}
-          className="w-full rounded-2xl bg-brand-600 py-3.5 text-center font-semibold text-white shadow-sm transition hover:bg-brand-700 active:scale-[0.99]"
+          onClick={handleBayar}
+          disabled={busy || !jalur}
+          className="w-full rounded-2xl bg-brand-600 py-3.5 text-center font-semibold text-white shadow-sm transition hover:bg-brand-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          Bayar Sekarang
+          {tombolLabel}
         </button>
       </footer>
 
-      {showModal && (
-        <PaymentSimulationModal
-          method={selectedMethod}
-          methodName={activeMethod.name}
+      {manualOpen && opsi && (
+        <ManualMethodModal
+          metodeDiterima={opsi.metodeDiterima}
           amount={totalAmount}
-          seed={seed}
-          onSuccess={() => void handlePaymentSuccess()}
-          onCancel={() => setShowModal(false)}
+          busy={busy}
+          error={error}
+          onConfirm={(metode) => void kirimKeKasir(metode)}
+          onClose={() => setManualOpen(false)}
         />
       )}
     </div>

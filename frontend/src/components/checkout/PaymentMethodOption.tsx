@@ -1,12 +1,12 @@
-import type { PaymentMethodOption as PaymentMethod } from '../../data/paymentMethods';
+import type { ManualMethodOption } from '../../data/paymentMethods';
 
 interface PaymentMethodOptionProps {
-  method: PaymentMethod;
+  method: ManualMethodOption;
   selected: boolean;
   onSelect: () => void;
 }
 
-/** Baris pilihan metode pembayaran (radio) pada halaman checkout. */
+/** Baris pilihan metode pembayaran manual (radio) pada modal checkout. */
 export default function PaymentMethodOption({
   method,
   selected,
@@ -16,6 +16,7 @@ export default function PaymentMethodOption({
     <button
       type="button"
       onClick={onSelect}
+      aria-pressed={selected}
       className={`flex w-full items-center gap-3 rounded-2xl border-2 bg-white p-3.5 text-left transition ${
         selected
           ? 'border-brand-500 ring-2 ring-brand-100'

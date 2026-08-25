@@ -1,16 +1,6 @@
 import { ApiError } from '../lib/ApiError';
-import { MIN_PASSWORD_LENGTH } from '../lib/password';
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_TEXT = 200;
-
-export interface RegisterInput {
-  cafeName: string;
-  address: string | null;
-  ownerName: string;
-  email: string;
-  password: string;
-}
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -50,28 +40,23 @@ export function parseLoginInput(body: unknown): LoginInput {
   return { email, password };
 }
 
-/** Validasi body pendaftaran kafe baru. */
-export function parseRegisterInput(body: unknown): RegisterInput {
-  const obj = asRecord(body);
-
-  const cafeName = requiredText(obj.cafeName, 'cafeName');
-  const ownerName = requiredText(obj.ownerName, 'ownerName');
-  const email = requiredText(obj.email, 'email').toLowerCase();
-  if (!EMAIL_RE.test(email)) {
-    throw ApiError.badRequest('Format email tidak valid');
-  }
-
-  const password = obj.password;
-  if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
-    throw ApiError.badRequest(
-      `Kata sandi minimal ${MIN_PASSWORD_LENGTH} karakter`,
-    );
-  }
-
-  let address: string | null = null;
-  if (obj.address !== undefined && obj.address !== null && obj.address !== '') {
-    address = requiredText(obj.address, 'address');
-  }
-
-  return { cafeName, address, ownerName, email, password };
+export interface RefreshInput {
+  refreshToken: string;
 }
+
+/**
+ * Validasi body permintaan perpanjangan sesi. Isi tokennya tidak diperiksa di
+ * sini — verifikasi tanda tangan & masa berlaku adalah tugas `authService`.
+ */
+export function parseRefreshInput(body: unknown): RefreshInput {
+  const obj = asRecord(body);
+  const refreshToken = obj.refreshToken;
+  if (typeof refreshToken !== 'string' || refreshToken.trim() === '') {
+    throw ApiError.badRequest('Field "refreshToken" wajib diisi');
+  }
+  return { refreshToken: refreshToken.trim() };
+}
+
+// CATATAN: `parseRegisterInput` sudah DIHAPUS bersama `authService.register`.
+// Body formulir pendaftaran kini divalidasi `pendaftaran.validation.ts` dan
+// berakhir di tabel `tenant_registrations`, bukan di `users`.

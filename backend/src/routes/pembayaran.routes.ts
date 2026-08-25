@@ -5,6 +5,7 @@ import { tenantScope } from '../middleware/tenant';
 import { ApiError } from '../lib/ApiError';
 import { pembayaranService } from '../services/pembayaran.service';
 import {
+  parseDokuBuatInput,
   parseManualPaymentInput,
   parseMidtransBuatInput,
 } from '../validation/pembayaran.validation';
@@ -12,8 +13,13 @@ import {
 export const pembayaranRouter = Router();
 
 /**
- * Area pembayaran: kasir & pemilik. `cafeId` selalu dari token — tenantScope
- * membatasi seluruh query Prisma ke kafe pengguna.
+ * Area pembayaran STAF (kasir & pemilik). `cafeId` selalu dari token —
+ * tenantScope membatasi seluruh query Prisma ke kafe pengguna.
+ *
+ * Sebagian endpoint di berkas ini sengaja PUBLIK: pelanggan membayar dari HP-nya
+ * sendiri tanpa akun. Endpoint publik tidak pernah menerima `cafeId` dari klien —
+ * kafe selalu diturunkan dari pesanan — sehingga tidak ada jalan menyeberang
+ * tenant lewat parameter yang ditebak.
  */
 const kasirAccess = [
   requireAuth,
@@ -48,14 +54,68 @@ pembayaranRouter.post(
   }),
 );
 
+// GET /api/cafes/:cafeId/pembayaran/opsi — metode yang tersedia di sebuah kafe.
+// PUBLIK: dibaca halaman checkout pelanggan untuk memilih Midtrans atau, bila
+// kafe belum menyetelnya, menampilkan daftar metode manual. Tidak pernah
+// mengembalikan kredensial apa pun.
+pembayaranRouter.get(
+  '/cafes/:cafeId/pembayaran/opsi',
+  asyncHandler(async (req, res) => {
+    const data = await pembayaranService.opsiPublik(req.params.cafeId);
+    res.json({ data });
+  }),
+);
+
 // POST /api/pembayaran/midtrans/buat — buat transaksi Snap untuk sebuah pesanan.
+// PUBLIK: pemanggilnya pelanggan di meja yang memang tidak punya akun. Kafe
+// (beserta kredensialnya) diturunkan dari pesanan, bukan dari body.
 pembayaranRouter.post(
   '/pembayaran/midtrans/buat',
-  kasirAccess,
   asyncHandler(async (req, res) => {
     const { orderId } = parseMidtransBuatInput(req.body);
-    const result = await pembayaranService.buatMidtrans(req.auth!.cafeId, orderId);
+    const result = await pembayaranService.buatMidtrans(orderId);
     res.json({ data: result });
+  }),
+);
+
+// POST /api/pembayaran/doku/buat — buat halaman pembayaran DOKU Checkout.
+// PUBLIK: sama seperti jalur Midtrans, pemanggilnya pelanggan di meja. Kredensial
+// DOKU milik platform (dari environment), jadi tidak ada apa pun soal kafe yang
+// diterima dari body — kafe tetap diturunkan dari pesanan.
+pembayaranRouter.post(
+  '/pembayaran/doku/buat',
+  asyncHandler(async (req, res) => {
+    const { orderId } = parseDokuBuatInput(req.body);
+    const result = await pembayaranService.buatDoku(orderId);
+    res.json({ data: result });
+  }),
+);
+
+// POST /api/pembayaran/doku/notifikasi — webhook DOKU. PUBLIK (tanpa auth):
+// dipanggil server DOKU, bukan pengguna. SELALU balas 200 agar gateway tidak
+// mengulang; keabsahannya dijaga verifikasi signature di dalam service.
+//
+// URL yang didaftarkan di dasbor DOKU:
+//   https://cafe.fessolution.my.id/api/pembayaran/doku/notifikasi
+pembayaranRouter.post(
+  '/pembayaran/doku/notifikasi',
+  asyncHandler(async (req, res) => {
+    try {
+      await pembayaranService.handleNotifikasiDoku(
+        req.headers,
+        (req.body ?? {}) as Record<string, unknown>,
+        {
+          // Body mentah (dipasang express.json) — wajib byte-identik agar digest
+          // cocok. `originalUrl` = path lengkap yang dipanggil DOKU, yaitu
+          // Request-Target yang ikut ditandatangani; query string dibuang.
+          rawBody: (req as typeof req & { rawBody?: string }).rawBody ?? '',
+          requestTarget: req.originalUrl.split('?')[0],
+        },
+      );
+    } catch (err) {
+      console.error('[doku] webhook error (ditelan, balas 200):', err);
+    }
+    res.status(200).json({ ok: true });
   }),
 );
 
@@ -81,12 +141,13 @@ pembayaranRouter.get(
   }),
 );
 
-// GET /api/pembayaran/:midtransOrderId/status — status transaksi Midtrans (polling).
+// GET /api/pembayaran/:orderId/status — status pembayaran sebuah pesanan
+// (polling halaman status). PUBLIK: yang menunggu hasilnya adalah pelanggan.
+// Parameternya boleh id pesanan CafeOS maupun `order_id` Midtrans.
 pembayaranRouter.get(
-  '/pembayaran/:midtransOrderId/status',
-  kasirAccess,
+  '/pembayaran/:orderId/status',
   asyncHandler(async (req, res) => {
-    const data = await pembayaranService.statusMidtrans(req.params.midtransOrderId);
+    const data = await pembayaranService.statusPembayaran(req.params.orderId);
     res.json({ data });
   }),
 );

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MenuCategory, MenuItem, MenuItemInput } from '../../types/menu';
 import { formatThousands, parseAmountInput } from '../../lib/format';
-import MenuItemImage from '../menu/MenuItemImage';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
+import ModalScrollArea from '../common/ModalScrollArea';
+import UploadFoto from './UploadFoto';
 
 interface MenuItemFormModalProps {
   categories: MenuCategory[];
@@ -57,6 +59,8 @@ export default function MenuItemFormModal({
   const nameRef = useRef<HTMLInputElement>(null);
   const priceRef = useRef<HTMLInputElement>(null);
   const categoryRef = useRef<HTMLSelectElement>(null);
+
+  useBodyScrollLock();
 
   // Fokus awal + tutup dengan tombol Esc.
   useEffect(() => {
@@ -124,7 +128,7 @@ export default function MenuItemFormModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-warm-espresso/40 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center overflow-hidden bg-warm-espresso/40 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="form-item-title"
@@ -137,11 +141,12 @@ export default function MenuItemFormModal({
         className="absolute inset-0 cursor-default"
       />
 
+      {/* Kepala & tombol tetap diam; hanya kolom isian yang bergulir. */}
       <form
         onSubmit={handleSubmit}
-        className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-warm-cream p-5 shadow-2xl sm:rounded-3xl"
+        className="relative flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-warm-cream shadow-2xl sm:rounded-3xl"
       >
-        <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="flex shrink-0 items-start justify-between gap-3 px-5 pb-3 pt-5">
           <div>
             <h2 id="form-item-title" className="text-lg font-bold text-warm-espresso">
               {isEdit ? 'Ubah Item Menu' : 'Tambah Item Menu'}
@@ -165,12 +170,12 @@ export default function MenuItemFormModal({
         </div>
 
         {noCategory && (
-          <p className="mb-4 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          <p className="mx-5 mb-3 shrink-0 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-700">
             Belum ada kategori. Buat kategori dulu sebelum menambah item menu.
           </p>
         )}
 
-        <div className="space-y-4">
+        <ModalScrollArea className="space-y-4 px-5 pb-1">
           <div>
             <label htmlFor="item-name" className="mb-1 block text-sm font-medium text-warm-subtle">
               Nama menu <span className="text-rose-500">*</span>
@@ -262,23 +267,30 @@ export default function MenuItemFormModal({
           </div>
 
           <div>
-            <label htmlFor="item-image" className="mb-1 block text-sm font-medium text-warm-subtle">
-              URL foto
+            <span className="mb-1 block text-sm font-medium text-warm-subtle">
+              Foto menu
+            </span>
+            <UploadFoto
+              value={imageUrl.trim()}
+              onChange={setImageUrl}
+              cafeId={item?.cafeId}
+            />
+
+            {/* Tetap disediakan untuk foto yang sudah telanjur diunggah ke
+                tempat lain — mis. dipakai bersama katalog atau media sosial. */}
+            <label
+              htmlFor="item-image"
+              className="mb-1 mt-3 block text-sm font-medium text-warm-subtle"
+            >
+              Atau masukkan URL foto
             </label>
-            <div className="flex items-center gap-3">
-              <MenuItemImage
-                src={imageUrl.trim()}
-                alt={name.trim() || 'Menu'}
-                className="h-14 w-14 shrink-0 rounded-xl"
-              />
-              <input
-                id="item-image"
-                value={imageUrl}
-                onChange={(event) => setImageUrl(event.target.value)}
-                placeholder="https://… (opsional)"
-                className={fieldClass(false)}
-              />
-            </div>
+            <input
+              id="item-image"
+              value={imageUrl}
+              onChange={(event) => setImageUrl(event.target.value)}
+              placeholder="https://… (opsional)"
+              className={fieldClass(false)}
+            />
             <p className="mt-1 text-xs text-warm-muted">
               Kosongkan untuk memakai gambar awal otomatis.
             </p>
@@ -300,9 +312,9 @@ export default function MenuItemFormModal({
               className="h-5 w-5 rounded border-warm-line accent-warm-amber focus:ring-warm-amber"
             />
           </label>
-        </div>
+        </ModalScrollArea>
 
-        <div className="mt-5 flex gap-3">
+        <div className="flex shrink-0 gap-3 px-5 pb-5 pt-4">
           <button
             type="button"
             onClick={onClose}

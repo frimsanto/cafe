@@ -12,6 +12,19 @@ export interface AuthUserDTO {
 }
 
 export interface AuthSessionDTO {
+  /** Token akses berumur pendek untuk header `Authorization`. */
+  token: string;
+  /** Token berumur panjang; hanya dipakai untuk menukar token akses baru. */
+  refreshToken: string;
+  user: AuthUserDTO;
+}
+
+/**
+ * Balasan `POST /api/auth/refresh`. Refresh token TIDAK ikut diperbarui —
+ * yang lama tetap berlaku sampai kedaluwarsa, jadi masa sesi punya batas atas
+ * yang pasti dan tidak bergeser setiap kali token akses diperbarui.
+ */
+export interface AuthRefreshDTO {
   token: string;
   user: AuthUserDTO;
 }

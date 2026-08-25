@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { pembayaranApi } from '../api/pembayaran';
 import { formatRupiah } from '../lib/format';
-import { labelMetode } from '../data/paymentMethods';
+import BadgeMetode from '../components/common/BadgeMetode';
 import AppLayout from '../components/layout/AppLayout';
 
 const POLL_MS = 3_000;
@@ -45,7 +45,7 @@ export default function PembayaranStatusPage() {
 
     const poll = async () => {
       try {
-        const res = await pembayaranApi.statusMidtrans(midtransOrderId);
+        const res = await pembayaranApi.status(midtransOrderId);
         if (cancelled) return;
         setStatus(res.status);
         setMetode(res.metodePembayaran);
@@ -92,7 +92,9 @@ export default function PembayaranStatusPage() {
             </div>
             <div className="flex items-center justify-between gap-2">
               <dt className="text-warm-muted">Metode</dt>
-              <dd className="font-medium text-warm-subtle">{labelMetode(metode)}</dd>
+              <dd>
+                <BadgeMetode metode={metode} />
+              </dd>
             </div>
             <div className="flex items-start justify-between gap-2">
               <dt className="text-warm-muted">ID Transaksi</dt>

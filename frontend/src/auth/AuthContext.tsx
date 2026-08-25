@@ -10,11 +10,12 @@ import {
 import type { AuthUser } from '../types/auth';
 import { authApi } from '../api/auth';
 import {
-  clearAuthToken,
+  clearAuthSession,
   describeApiError,
   readAuthToken,
+  setSessionRefreshedHandler,
   setUnauthorizedHandler,
-  writeAuthToken,
+  writeAuthSession,
 } from '../lib/apiClient';
 
 /**
@@ -36,20 +37,15 @@ interface LoginResult {
   user?: AuthUser;
 }
 
-/** Data pendaftaran kafe baru (pemilik + data usaha). */
-export interface RegisterInput {
-  cafeName: string;
-  address: string;
-  ownerName: string;
-  email: string;
-  password: string;
-}
-
+// CATATAN: `register` sudah DIHAPUS dari context ini. Pendaftaran tidak lagi
+// menerbitkan sesi — halaman `/daftar` memanggil `pendaftaranApi.daftar` dan
+// berhenti di layar tanda terima, sementara akunnya dibuat admin setelah
+// pendaftar dihubungi. Jangan tambahkan kembali fungsi yang menulis sesi dari
+// formulir pendaftaran.
 interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<LoginResult>;
-  register: (input: RegisterInput) => Promise<LoginResult>;
   logout: () => void;
 }
 
@@ -90,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     setUser(null);
-    clearAuthToken();
+    clearAuthSession();
     try {
       window.localStorage.removeItem(USER_STORAGE_KEY);
     } catch {
@@ -98,8 +94,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Token kedaluwarsa di tengah pemakaian: `apiFetch` memanggil handler ini
-  // begitu ada balasan 401, sehingga sesi mati langsung dibersihkan.
+  // Sesi benar-benar mati (refresh token ikut kedaluwarsa/ditolak): `apiClient`
+  // memanggil handler ini setelah upaya perpanjangan otomatis gagal, sehingga
+  // profil dibersihkan dan `ProtectedRoute` mengalihkan ke `/login`.
+  //
+  // Token akses yang sekadar kedaluwarsa TIDAK sampai ke sini — `apiClient`
+  // memperbaruinya lalu mengulang permintaannya tanpa mengusik state ini.
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setUser(null);
@@ -109,14 +109,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         /* abaikan */
       }
     });
-    return () => setUnauthorizedHandler(null);
+    // Setiap perpanjangan sesi membawa profil terbaru dari server — dipakai agar
+    // perubahan peran ikut terpakai tanpa menunggu pengguna masuk ulang.
+    setSessionRefreshedHandler((refreshed) => {
+      setUser(refreshed);
+      persistUser(refreshed);
+    });
+    return () => {
+      setUnauthorizedHandler(null);
+      setSessionRefreshedHandler(null);
+    };
   }, []);
 
   const login = useCallback(
     async (email: string, password: string): Promise<LoginResult> => {
       try {
         const session = await authApi.login(email.trim().toLowerCase(), password);
-        writeAuthToken(session.token);
+        writeAuthSession(session.token, session.refreshToken);
         persistUser(session.user);
         setUser(session.user);
         return { ok: true, user: session.user };
@@ -130,38 +139,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  /**
-   * Daftarkan kafe baru. Backend membuat `cafeId` baru untuk setiap
-   * pendaftaran — inilah pemisah tenant — lalu menjadikan pendaftarnya OWNER
-   * dan langsung mengembalikan token, jadi tidak perlu login ulang.
-   */
-  const register = useCallback(
-    async (input: RegisterInput): Promise<LoginResult> => {
-      try {
-        const session = await authApi.register({
-          cafeName: input.cafeName.trim(),
-          address: input.address.trim(),
-          ownerName: input.ownerName.trim(),
-          email: input.email.trim().toLowerCase(),
-          password: input.password,
-        });
-        writeAuthToken(session.token);
-        persistUser(session.user);
-        setUser(session.user);
-        return { ok: true, user: session.user };
-      } catch (error) {
-        return {
-          ok: false,
-          error: describeApiError(error, 'Pendaftaran gagal. Coba lagi.'),
-        };
-      }
-    },
-    [],
-  );
-
   const value = useMemo<AuthContextValue>(
-    () => ({ user, isAuthenticated: user !== null, login, register, logout }),
-    [user, login, register, logout],
+    () => ({ user, isAuthenticated: user !== null, login, logout }),
+    [user, login, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

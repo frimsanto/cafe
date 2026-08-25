@@ -8,7 +8,6 @@ import {
 } from '../middleware/auth';
 import { tenantScope } from '../middleware/tenant';
 import { cashierService } from '../services/cashier.service';
-import { parseConfirmPaymentInput } from '../validation/cashier.validation';
 
 export const cashierRouter = Router();
 
@@ -49,14 +48,7 @@ cashierRouter.get(
   }),
 );
 
-// POST /api/cafes/:cafeId/cashier/orders/:orderId/pay — konfirmasi pembayaran
-// tunai/EDC; pesanan berpindah ke DIPROSES_DAPUR dan langsung tampil di KDS.
-cashierRouter.post(
-  '/cafes/:cafeId/cashier/orders/:orderId/pay',
-  cashierAccess,
-  asyncHandler(async (req, res) => {
-    const input = parseConfirmPaymentInput(req.body);
-    const data = await cashierService.confirmPayment(req.params.orderId, input);
-    res.json({ data });
-  }),
-);
+// Konfirmasi pembayaran kasir TIDAK ada di sini: satu-satunya jalurnya adalah
+// `POST /api/pembayaran/manual` (metode manual) dan Midtrans (`/api/pembayaran/
+// midtrans/*`). Endpoint `/pay` lama sudah dihapus agar tidak ada dua jalan
+// menuju "pesanan lunas".

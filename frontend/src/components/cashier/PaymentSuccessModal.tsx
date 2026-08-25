@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import type { Order } from '../../types/order';
 import { formatRupiah } from '../../lib/format';
 import { labelMetode } from '../../data/paymentMethods';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
+import ModalScrollArea from '../common/ModalScrollArea';
 
 interface PaymentSuccessModalProps {
   order: Order;
@@ -27,6 +29,8 @@ export default function PaymentSuccessModal({
 }: PaymentSuccessModalProps) {
   const printRef = useRef<HTMLButtonElement>(null);
 
+  useBodyScrollLock();
+
   useEffect(() => {
     printRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
@@ -42,7 +46,7 @@ export default function PaymentSuccessModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center overflow-hidden bg-warm-espresso/40 backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="bayar-sukses-title"
@@ -54,42 +58,44 @@ export default function PaymentSuccessModal({
         className="absolute inset-0 cursor-default"
       />
 
-      <div className="relative w-full max-w-md rounded-t-3xl bg-warm-paper p-5 text-center shadow-2xl sm:rounded-3xl">
-        <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-warm-success/10 text-3xl">
-          ✅
-        </span>
+      <div className="relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-warm-paper text-center shadow-2xl sm:rounded-3xl">
+        <ModalScrollArea className="px-5 pt-5">
+          <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-warm-success/10 text-3xl">
+            ✅
+          </span>
 
-        <h2 id="bayar-sukses-title" className="mt-3 text-lg font-bold text-warm-espresso">
-          Pembayaran berhasil
-        </h2>
-        <p className="text-sm text-warm-muted">
-          {order.tableName} · {methodName} ·{' '}
-          <span className="font-mono">{order.payment?.transactionId ?? '-'}</span>
-        </p>
+          <h2 id="bayar-sukses-title" className="mt-3 text-lg font-bold text-warm-espresso">
+            Pembayaran berhasil
+          </h2>
+          <p className="text-sm text-warm-muted">
+            {order.tableName} · {methodName} ·{' '}
+            <span className="font-mono">{order.payment?.transactionId ?? '-'}</span>
+          </p>
 
-        <dl className="mt-4 space-y-2 rounded-2xl bg-warm-cream p-4 text-sm">
-          <div className="flex items-center justify-between">
-            <dt className="text-warm-muted">Total dibayar</dt>
-            <dd className="font-bold text-warm-espresso tabular-nums">
-              {formatRupiah(order.totalAmount)}
-            </dd>
-          </div>
-
-          {change !== null && (
-            <div className="flex items-center justify-between border-t border-warm-line pt-2">
-              <dt className="text-warm-muted">Kembalian</dt>
-              <dd className="text-lg font-bold text-warm-success tabular-nums">
-                {formatRupiah(change)}
+          <dl className="mt-4 space-y-2 rounded-2xl bg-warm-cream p-4 text-sm">
+            <div className="flex items-center justify-between">
+              <dt className="text-warm-muted">Total dibayar</dt>
+              <dd className="font-bold text-warm-espresso tabular-nums">
+                {formatRupiah(order.totalAmount)}
               </dd>
             </div>
-          )}
-        </dl>
 
-        <p className="mt-3 text-sm text-warm-muted">
-          Pesanan sudah diteruskan ke dapur.
-        </p>
+            {change !== null && (
+              <div className="flex items-center justify-between border-t border-warm-line pt-2">
+                <dt className="text-warm-muted">Kembalian</dt>
+                <dd className="text-lg font-bold text-warm-success tabular-nums">
+                  {formatRupiah(change)}
+                </dd>
+              </div>
+            )}
+          </dl>
 
-        <div className="mt-5 flex gap-3">
+          <p className="mt-3 text-sm text-warm-muted">
+            Pesanan sudah diteruskan ke dapur.
+          </p>
+        </ModalScrollArea>
+
+        <div className="flex shrink-0 gap-3 px-5 pb-5 pt-5">
           <button
             type="button"
             onClick={onClose}

@@ -91,8 +91,23 @@
     margin: 0;
   }
 
+  /* Modal cetak mengunci gulir `body` selama terbuka; saat mencetak kuncinya
+     harus dilepas agar struk yang lebih tinggi dari layar tidak terpotong. */
+  body {
+    overflow: visible !important;
+    padding-right: 0 !important;
+  }
+
   body * {
     visibility: hidden;
+  }
+
+  /* Badan modal yang bisa digulir membatasi tingginya ke layar. Saat mencetak,
+     batas itu harus lepas agar struk yang lebih panjang dari layar tidak
+     terpotong di tengah — `.print-area` diposisikan `absolute`, jadi tetap
+     terpangkas oleh induk yang punya `overflow` selain `visible`. */
+  .modal-scroll-area {
+    overflow: visible !important;
   }
 
   .print-area,

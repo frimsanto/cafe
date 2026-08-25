@@ -125,6 +125,24 @@ class Realtime {
   }
 
   /**
+   * Status pembayaran sebuah pesanan berubah (MENUNGGU → LUNAS/GAGAL).
+   *
+   * Dipancarkan oleh KEDUA jalur pembayaran, termasuk webhook Midtrans yang
+   * datang tanpa ada layar yang menunggunya — inilah yang membuat badge status
+   * di layar kasir berubah sendiri tanpa menunggu polling.
+   */
+  emitPaymentStatusChanged(
+    cafeId: string,
+    data: {
+      orderId: string;
+      statusPembayaran: string | null;
+      metodePembayaran: string | null;
+    },
+  ): void {
+    this.broadcastToCafe(cafeId, { type: 'payment.status.changed', data });
+  }
+
+  /**
    * Pesanan baru DIBAYAR — dipakai dasbor pemilik untuk menaikkan omzet dan
    * hitungan menu terlaris secara langsung tanpa memuat ulang data.
    * Payload sengaja ringkas (hanya yang dibutuhkan agregasi dasbor).
