@@ -47,6 +47,15 @@ export function buatPrismaMock() {
     midtransCredential: model(),
     paymentAuditLog: model(),
     gatewayWebhookEvent: model(),
+    // Modul staf, perangkat, jadwal, absensi & shift kasir.
+    cashierDevice: model(),
+    cashierShift: model(),
+    cashMovement: model(),
+    shiftTemplate: model(),
+    shiftSchedule: model(),
+    shiftReplacement: model(),
+    attendanceRecord: model(),
+    attendancePhoto: model(),
     // Transaksi interaktif menjalankan callback-nya dengan klien yang sama.
     // Cukup untuk uji: yang diperiksa adalah APA yang ditulis, bukan bahwa
     // PostgreSQL benar-benar menggulungnya kembali.

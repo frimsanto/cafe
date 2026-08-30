@@ -41,6 +41,48 @@ export const AKSI_AUDIT = {
   PESANAN_KASIR_DIBUAT: 'pesanan.kasir.dibuat',
   PESANAN_DIBATALKAN: 'pesanan.dibatalkan',
   DAPUR_STATUS_DIUBAH: 'dapur.status.diubah',
+
+  // ── Staf & PIN ──
+  STAF_DITAMBAH: 'staf.ditambah',
+  STAF_DIPERBARUI: 'staf.diperbarui',
+  STAF_DIAKTIFKAN: 'staf.diaktifkan',
+  STAF_DINONAKTIFKAN: 'staf.dinonaktifkan',
+  /// Nilai PIN-nya sendiri TIDAK PERNAH ikut — hanya faktanya bahwa PIN diubah.
+  PIN_DIATUR: 'pin.diatur',
+  PIN_DIRESET: 'pin.direset',
+  PIN_TERKUNCI: 'pin.terkunci',
+
+  // ── Perangkat POS ──
+  PERANGKAT_DIDAFTARKAN: 'perangkat.didaftarkan',
+  PERANGKAT_DICABUT: 'perangkat.dicabut',
+  SESI_KASIR_DIBUKA: 'sesi.kasir.dibuka',
+  SESI_KASIR_DIKUNCI: 'sesi.kasir.dikunci',
+
+  // ── Jadwal ──
+  JADWAL_TEMPLATE_DISIMPAN: 'jadwal.template.disimpan',
+  JADWAL_TEMPLATE_DIHAPUS: 'jadwal.template.dihapus',
+  JADWAL_DITETAPKAN: 'jadwal.ditetapkan',
+  JADWAL_DIBATALKAN: 'jadwal.dibatalkan',
+
+  // ── Absensi ──
+  ABSEN_MASUK: 'absen.masuk',
+  ABSEN_PULANG: 'absen.pulang',
+  ABSEN_PENGECUALIAN_FOTO: 'absen.pengecualian-foto',
+  ABSEN_DIKOREKSI: 'absen.dikoreksi',
+
+  // ── Shift kasir ──
+  SHIFT_DIBUKA: 'shift.dibuka',
+  SHIFT_DITUTUP: 'shift.ditutup',
+  SHIFT_SELISIH_KAS: 'shift.selisih-kas',
+  SHIFT_MODAL_DIUBAH: 'shift.modal.diubah',
+  SHIFT_DIKOREKSI: 'shift.dikoreksi',
+  KAS_MASUK: 'kas.masuk',
+  KAS_KELUAR: 'kas.keluar',
+
+  // ── Penggantian petugas ──
+  PENGGANTI_DIAJUKAN: 'pengganti.diajukan',
+  PENGGANTI_DISETUJUI: 'pengganti.disetujui',
+  PENGGANTI_DITOLAK: 'pengganti.ditolak',
 } as const;
 
 export type AksiAudit = (typeof AKSI_AUDIT)[keyof typeof AKSI_AUDIT];
@@ -60,6 +102,24 @@ export interface InputAudit {
   orderId?: string | null;
   nilaiLama?: Record<string, unknown> | null;
   nilaiBaru?: Record<string, unknown> | null;
+
+  // ── Perluasan: dari jejak pembayaran menjadi jejak audit umum ──────────────
+  //
+  // Tabelnya tetap `payment_audit_logs` — lihat alasannya di schema. Yang
+  // bertambah cuma kolom, dan seluruh baris lama tetap terbaca. Aksi shift,
+  // absensi, dan staf memakai tabel yang sama supaya "apa yang terjadi pada
+  // pesanan ini" dan "siapa yang memegang laci saat itu" bisa dibaca dalam
+  // SATU urutan waktu.
+
+  /** `order` | `cashier_shift` | `attendance` | `user` | `shift_schedule` | … */
+  entityType?: string | null;
+  entityId?: string | null;
+  /** Alasan tertulis — wajib untuk pembatalan, penolakan, dan koreksi. */
+  alasan?: string | null;
+  /** Terminal tempat aksi terjadi. */
+  deviceId?: string | null;
+  /** Menyatukan beberapa baris audit yang lahir dari satu ketukan tombol. */
+  correlationId?: string | null;
 }
 
 /**
@@ -75,9 +135,15 @@ export function aktorDariRequest(req: Request): AktorAudit {
   const ip = baris?.split(',')[0]?.trim() || req.ip || req.socket.remoteAddress || null;
   const ua = req.headers['user-agent'];
 
+  // Dua jalur autentikasi bermuara ke sini: staf yang login lewat email/sandi
+  // (`req.auth`) dan petugas yang membuka sesi dengan PIN di terminal POS
+  // (`req.sesiKasir`). Keduanya harus menghasilkan jejak yang sama-sama
+  // menyebut SIAPA — sebuah pembayaran yang tercatat tanpa aktor hanya karena
+  // diproses dari layar kasir adalah persis jenis lubang yang membuat selisih
+  // kas tidak bisa ditelusuri.
   return {
-    userId: req.auth?.userId ?? null,
-    role: req.auth?.role ?? null,
+    userId: req.auth?.userId ?? req.sesiKasir?.userId ?? null,
+    role: req.auth?.role ?? req.sesiKasir?.role ?? null,
     ip,
     // Header user-agent bisa panjang sekali; dipotong agar satu baris audit
     // tidak menghabiskan halaman.
@@ -105,6 +171,11 @@ export const auditLogService = {
           nilaiBaru: (redaksiAudit(input.nilaiBaru) ?? Prisma.JsonNull) as Prisma.InputJsonValue,
           ip: input.aktor?.ip ?? null,
           userAgent: input.aktor?.userAgent ?? null,
+          entityType: input.entityType ?? null,
+          entityId: input.entityId ?? null,
+          alasan: input.alasan ?? null,
+          deviceId: input.deviceId ?? null,
+          correlationId: input.correlationId ?? null,
         },
       });
     } catch (err) {

@@ -12,7 +12,21 @@ import { errorHandler, notFoundHandler } from './middleware/error';
 export function createApp() {
   const app = express();
 
-  app.use(cors());
+  // CORS dengan `credentials`, supaya cookie HttpOnly milik terminal POS ikut
+  // terkirim (lihat `lib/cookie.ts`). `origin: true` MEMANTULKAN origin
+  // pemanggil alih-alih `*` — keduanya tidak boleh digabung dengan credentials.
+  //
+  // Yang menjaga terhadap CSRF di sini BUKAN daftar origin ini, melainkan
+  // `SameSite: 'strict'` pada cookienya: browser tidak akan pernah menyertakan
+  // cookie POS pada permintaan yang berasal dari situs lain, apa pun yang
+  // dikatakan header CORS. Itu penting karena origin frontend CafeOS berbeda
+  // antara produksi, pengembangan, dan tiap perangkat yang dipakai menguji —
+  // daftar yang harus dijaga tetap akurat akan menjadi sumber kegagalan
+  // tersendiri, dengan gejala yang menyesatkan.
+  //
+  // Endpoint publik pelanggan (menu QR, status pesanan) tidak membawa cookie
+  // apa pun, jadi perilakunya tidak berubah oleh perubahan ini.
+  app.use(cors({ origin: true, credentials: true }));
   // Simpan body MENTAH di samping hasil parse. Webhook DOKU menandatangani
   // digest SHA-256 atas byte yang dikirimnya; menyusun ulang JSON dari objek
   // hasil parse menghasilkan byte berbeda (spasi/urutan kunci) dan akan membuat

@@ -94,3 +94,61 @@ export function verifyRefreshToken(token: string): AuthPayload | null {
     return null;
   }
 }
+
+// ── Sesi kasir di perangkat POS ──────────────────────────────────────────────
+
+/**
+ * Isi token sesi kasir — diterbitkan setelah PIN dibuktikan di sebuah terminal.
+ *
+ * Berbeda dari token akses biasa dalam satu hal yang menentukan: ia MEMBAWA
+ * `deviceId`. Sesi kasir tidak pernah lepas dari terminal tempat ia dibuka,
+ * sehingga token yang entah bagaimana berpindah ke perangkat lain tetap tidak
+ * cocok dengan token perangkat yang menyertainya di sana.
+ */
+export interface SesiKasirPayload extends AuthPayload {
+  deviceId: string;
+}
+
+/**
+ * Umur sesi kasir. Yang benar-benar mengakhiri sesi adalah tombol "Ganti
+ * Petugas"; batas ini hanya menjaga terminal yang ditinggalkan menyala
+ * semalaman tidak tetap terbuka atas nama kasir yang sudah pulang.
+ */
+const SESI_KASIR_EXPIRES_IN = process.env.POS_SESSION_EXPIRES_IN ?? '14h';
+
+/**
+ * Terbitkan token sesi kasir.
+ *
+ * Klaim `typ: 'pos'` yang membuatnya TIDAK bisa dipakai sebagai token akses
+ * biasa: `verifyAccessToken` menerima token tanpa `typ` (peninggalan versi
+ * lama) tetapi sebuah nilai `typ` yang bukan `refresh` akan lolos di sana —
+ * karena itu verifikasi sesi POS di bawah memeriksa `typ` secara ketat, dan
+ * middleware POS tidak pernah memakai `verifyAccessToken`.
+ */
+export function signSesiKasir(payload: SesiKasirPayload): string {
+  if (!jwtEnabled) throw new Error('JWT_SECRET belum dikonfigurasi');
+  return jwt.sign({ ...payload, typ: 'pos' }, SECRET, {
+    expiresIn: SESI_KASIR_EXPIRES_IN,
+  } as jwt.SignOptions);
+}
+
+/** Verifikasi token sesi kasir; `typ` WAJIB bernilai `pos`. */
+export function verifySesiKasir(token: string): SesiKasirPayload | null {
+  if (!jwtEnabled) return null;
+  try {
+    const decoded = jwt.verify(token, SECRET);
+    if (typeof decoded !== 'object' || decoded === null) return null;
+
+    const obj = decoded as Record<string, unknown>;
+    // Ketat, bukan permisif: tidak ada sesi POS yang terbit sebelum klaim ini
+    // ada, jadi tidak ada kompatibilitas mundur yang perlu dijaga di sini.
+    if (obj.typ !== 'pos') return null;
+
+    const dasar = readPayload(decoded);
+    if (!dasar || typeof obj.deviceId !== 'string') return null;
+
+    return { ...dasar, deviceId: obj.deviceId };
+  } catch {
+    return null;
+  }
+}

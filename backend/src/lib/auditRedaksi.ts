@@ -21,6 +21,16 @@ const KUNCI_RAHASIA = [
   'apikey',
   'api_key',
   'privatekey',
+  // Tanda tangan webhook: bukan rahasia abadi, tapi menyimpannya memudahkan
+  // penyusunan ulang payload palsu yang lolos verifikasi.
+  'signature',
+  // PIN staf. Polanya sengaja seluas ini — `includes('pin')` ikut menelan
+  // `pinGagal` dan `pinTerkunciSampai` yang sebenarnya aman dicatat. Itu harga
+  // yang sengaja dibayar: kolom penghitung percobaan tidak berharga di audit
+  // log (aksinya sendiri sudah menyebutkan apa yang terjadi), sementara satu
+  // saja PIN yang lolos ke sini akan hidup selamanya di database dan di setiap
+  // backup. Untuk rahasia, over-redaksi adalah arah kegagalan yang benar.
+  'pin',
 ];
 
 /** Kunci yang nilainya disimpan tersamar (ekor saja) — bukan dibuang. */
