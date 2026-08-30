@@ -24,6 +24,7 @@ import MenuManagementPage from './pages/MenuManagementPage';
 import TableManagementPage from './pages/TableManagementPage';
 import CashierPage from './pages/CashierPage';
 import PaymentSettingsPage from './pages/PaymentSettingsPage';
+import StaffManagementPage from './pages/StaffManagementPage';
 import PembayaranStatusPage from './pages/PembayaranStatusPage';
 
 /**
@@ -190,6 +191,14 @@ export default function App() {
                 element={
                   <ProtectedRoute allow={['KASIR', 'OWNER']}>
                     <CashierPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dasbor/staf"
+                element={
+                  <ProtectedRoute allow={['OWNER']}>
+                    <StaffManagementPage />
                   </ProtectedRoute>
                 }
               />
