@@ -65,12 +65,15 @@ export const tableService = {
 
     const active = await prisma.order.groupBy({
       by: ['tableId'],
-      where: { status: { not: 'SELESAI' } },
+      // Pesanan yang DIBATALKAN tidak menahan meja siapa pun. Tanpa saringan
+      // ini, satu pembatalan membuat mejanya tampak terisi selamanya — dan
+      // tidak ada layar mana pun yang bisa membebaskannya lagi.
+      where: { status: { notIn: ['SELESAI', 'DIBATALKAN'] }, tableId: { not: null } },
       _count: { _all: true },
     });
 
     const activeByTable = new Map(
-      active.map((row) => [row.tableId, row._count._all]),
+      active.map((row) => [row.tableId as string, row._count._all]),
     );
 
     return tables.map((table) => {
@@ -86,7 +89,7 @@ export const tableService = {
   /** Status satu meja (dipakai saat menyiarkan perubahan realtime). */
   async getTableStatus(tableId: string): Promise<TableStatus> {
     const activeOrderCount = await prisma.order.count({
-      where: { tableId, status: { not: 'SELESAI' } },
+      where: { tableId, status: { notIn: ['SELESAI', 'DIBATALKAN'] } },
     });
     return activeOrderCount > 0 ? 'DIGUNAKAN' : 'KOSONG';
   },
@@ -210,7 +213,7 @@ export const tableService = {
     if (!existing) throw ApiError.notFound('Meja tidak ditemukan');
 
     const activeOrders = await prisma.order.count({
-      where: { tableId, status: { not: 'SELESAI' } },
+      where: { tableId, status: { notIn: ['SELESAI', 'DIBATALKAN'] } },
     });
     if (activeOrders > 0) {
       throw ApiError.conflict(

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { Order } from '../../types/order';
 import { formatRupiah } from '../../lib/format';
 import { labelMetode } from '../../data/paymentMethods';
+import { labelTujuan } from '../../lib/orderStatus';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import ModalScrollArea from '../common/ModalScrollArea';
 
@@ -68,7 +69,7 @@ export default function PaymentSuccessModal({
             Pembayaran berhasil
           </h2>
           <p className="text-sm text-warm-muted">
-            {order.tableName} · {methodName} ·{' '}
+            {labelTujuan(order)} · {methodName} ·{' '}
             <span className="font-mono">{order.payment?.transactionId ?? '-'}</span>
           </p>
 

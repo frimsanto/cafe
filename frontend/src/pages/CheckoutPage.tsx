@@ -1,21 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ManualMethodCode } from '../types/order';
-import type { OpsiPembayaranDTO } from '../types/api';
+import type { OpsiPembayaranDTO, OrderDTO } from '../types/api';
 import { useCart } from '../cart/CartContext';
+import { usePesananAktif } from '../order/PesananAktifContext';
 import { formatRupiah } from '../lib/format';
 import { ordersApi } from '../api/orders';
 import { pembayaranApi } from '../api/pembayaran';
 import { payWithSnap } from '../lib/midtransSnap';
-import { describeApiError } from '../lib/apiClient';
+import { ApiError, describeApiError } from '../lib/apiClient';
+import { nomorAntrian } from '../lib/orderCode';
 import { useTableSession } from '../table/TableSessionContext';
 import ManualMethodModal from '../components/checkout/ManualMethodModal';
+import PaymentIcon, { type PaymentIconName } from '../components/payment/PaymentIcon';
 
 /** Jalur pembayaran yang bisa dipilih pelanggan di layar ini. */
 type Jalur = 'MIDTRANS' | 'DOKU' | 'MANUAL';
 
 interface JalurInfo {
-  ikon: string;
+  ikon: PaymentIconName;
   nama: string;
   keterangan: string;
   /** Label tombol bayar saat jalur ini yang dipilih. */
@@ -27,21 +30,21 @@ interface JalurInfo {
 // menahan pesanan sampai ada kasir yang mengonfirmasi.
 const JALUR: Record<Jalur, JalurInfo> = {
   MIDTRANS: {
-    ikon: '🔵',
+    ikon: 'online',
     nama: 'QRIS, GoPay, Virtual Account, Kartu',
-    keterangan: 'Pilih metodenya di layar pembayaran yang akan terbuka.',
+    keterangan: 'Langsung terverifikasi. Pilih metodenya di layar berikutnya.',
     tombol: 'Bayar Sekarang',
   },
   DOKU: {
-    ikon: '🟣',
+    ikon: 'online',
     nama: 'DOKU Checkout',
     keterangan: 'QRIS, Virtual Account, dan e-wallet lewat halaman DOKU.',
     tombol: 'Lanjut ke DOKU',
   },
   MANUAL: {
-    ikon: '🧾',
+    ikon: 'tunai',
     nama: 'Bayar di kasir',
-    keterangan: 'Tunai, QRIS statis, transfer, atau kartu — dikonfirmasi kasir.',
+    keterangan: 'Tunai, QRIS statis, atau transfer — diperiksa kasir dulu.',
     tombol: 'Bayar di Kasir',
   },
 };
@@ -66,14 +69,21 @@ const JALUR: Record<Jalur, JalurInfo> = {
  * Apa pun jalurnya, yang menentukan lunas adalah server: kedua jalur gateway
  * sama-sama bermuara di halaman status yang melakukan polling.
  *
- * Id pesanan yang sudah dibuat disimpan (`orderIdRef`) supaya percobaan bayar
+ * Pesanan yang sudah dibuat disimpan (`orderRef`) supaya percobaan bayar
  * berikutnya memakai pesanan yang sama — batal bayar tidak menumpuk pesanan
  * kembar di antrean kasir. Ini juga yang membuat pelanggan bebas berpindah
  * jalur (mis. gagal di DOKU lalu memilih kasir) tanpa menggandakan pesanan.
+ *
+ * Ada satu belokan: bila tamu masih punya tagihan yang belum dibayar
+ * (`pesananAktif`), isi keranjang ini DITAMBAHKAN ke pesanan itu lewat
+ * `POST .../orders/:orderId/items`, bukan menjadi pesanan kedua. Satu meja
+ * tetap satu tagihan dan satu nomor antrian — dan kasir tidak menerima dua
+ * tagihan terpisah dari orang yang sama.
  */
 export default function CheckoutPage() {
   const { lines, totalItems, totalAmount, clearCart } = useCart();
   const { table } = useTableSession();
+  const { mulai, selesai, pesananAktif } = usePesananAktif();
   const navigate = useNavigate();
 
   const [opsi, setOpsi] = useState<OpsiPembayaranDTO | null>(null);
@@ -83,14 +93,18 @@ export default function CheckoutPage() {
   const [manualOpen, setManualOpen] = useState(false);
   const [jalur, setJalur] = useState<Jalur | null>(null);
 
-  /** Pesanan yang sudah terlanjur dibuat di server pada percobaan sebelumnya. */
-  const orderIdRef = useRef<string | null>(null);
+  /**
+   * Pesanan yang sudah terlanjur dibuat di server pada percobaan sebelumnya.
+   * Disimpan utuh (bukan hanya id) karena nomor antriannya ikut dipakai saat
+   * pesanan ini dicatat sebagai "yang sedang berjalan".
+   */
+  const orderRef = useRef<OrderDTO | null>(null);
 
   // Kalau keranjang kosong (mis. halaman dibuka langsung), balik ke menu.
   // Keranjang yang dikosongkan SETELAH pesanan dibuat tidak dihitung — saat itu
   // kita memang sedang berpindah ke halaman status, bukan tersesat di checkout.
   useEffect(() => {
-    if (lines.length === 0 && !orderIdRef.current) {
+    if (lines.length === 0 && !orderRef.current) {
       navigate('/menu', { replace: true });
     }
   }, [lines.length, navigate]);
@@ -139,33 +153,99 @@ export default function CheckoutPage() {
     setJalur((prev) => (prev && tersedia.includes(prev) ? prev : (tersedia[0] ?? null)));
   }, [tersedia]);
 
-  /** Buat pesanan bila belum ada; pakai ulang bila percobaan sebelumnya gagal. */
+  /**
+   * Pesanan yang belum dibayar dan MASIH menerima tambahan — bila ada, isi
+   * keranjang ini menempel ke sana alih-alih menjadi pesanan kedua.
+   *
+   * Kafenya dicocokkan: tamu yang berpindah kafe (memindai QR di tempat lain)
+   * tidak boleh menambah isi tagihan kafe sebelumnya.
+   */
+  const menambahKe =
+    pesananAktif?.bisaDitambah && table && pesananAktif.cafeId === table.cafeId
+      ? pesananAktif
+      : null;
+
+  /**
+   * Pastikan ada pesanan di server untuk isi keranjang ini, lalu kembalikan
+   * id-nya. Tiga jalan, dan hanya satu yang berjalan tiap kali:
+   *
+   *   1. Sudah dibuat pada percobaan bayar sebelumnya → pakai ulang, supaya
+   *      batal bayar tidak menumpuk pesanan kembar di antrean kasir.
+   *   2. Ada tagihan berjalan → tambahkan ke sana (satu meja, satu tagihan).
+   *   3. Selain itu → pesanan baru.
+   */
   const pastikanOrder = useCallback(async (): Promise<string> => {
-    if (orderIdRef.current) return orderIdRef.current;
+    if (orderRef.current) return orderRef.current.id;
     if (!table) throw new Error('Meja belum dikenali. Pindai ulang QR di meja kamu.');
 
-    const created = await ordersApi.create(
-      table.cafeId,
-      table.tableId,
-      lines.map((line) => ({
-        menuItemId: line.item.id,
-        quantity: line.quantity,
-        notes: line.notes,
-      })),
-    );
-    orderIdRef.current = created.id;
-    return created.id;
-  }, [table, lines]);
+    const items = lines.map((line) => ({
+      menuItemId: line.item.id,
+      quantity: line.quantity,
+      notes: line.notes,
+    }));
 
-  /** Pindah ke halaman status pesanan; keranjang dikosongkan di sini. */
+    if (menambahKe) {
+      try {
+        const digabung = await ordersApi.tambahItem(
+          menambahKe.cafeId,
+          menambahKe.orderId,
+          items,
+        );
+        orderRef.current = digabung;
+        return digabung.id;
+      } catch (err) {
+        // 409 = tagihan itu keburu ditutup (dibayar di kasir, atau dilepas ke
+        // dapur) di antara saat halaman ini dibuka dan saat tombol ditekan.
+        // Menolak mentah-mentah akan membuang isi keranjang tamu untuk sesuatu
+        // yang bukan salahnya; jadi penandanya dicabut dan pesanannya menjadi
+        // pesanan baru — persis yang seharusnya terjadi setelah tagihan lama
+        // ditutup.
+        if (!(err instanceof ApiError) || err.status !== 409) throw err;
+        selesai();
+      }
+    }
+
+    const created = await ordersApi.create(table.cafeId, table.tableId, items);
+    orderRef.current = created;
+    // Dicatat SEJAK detik pesanan lahir, bukan nanti saat halaman status
+    // dibuka. Tamu yang membatalkan pembayaran lalu menekan "kembali" tidak
+    // pernah sampai ke halaman status, sehingga `orderRef` ikut musnah bersama
+    // halaman ini — dan isi keranjang berikutnya akan menjadi pesanan KEDUA
+    // untuk meja yang sama, menumpuk dua tagihan atas nama satu orang di
+    // antrean kasir.
+    mulai({
+      orderId: created.id,
+      cafeId: created.cafeId,
+      queueNumber: created.queueNumber,
+      bisaDitambah: true,
+    });
+    return created.id;
+  }, [table, lines, menambahKe, selesai, mulai]);
+
+  /**
+   * Pindah ke halaman status pesanan; keranjang dikosongkan di sini.
+   *
+   * Sekaligus mencatat pesanan sebagai "yang sedang berjalan". Inilah satu-
+   * satunya corong tempat sebuah pesanan menjadi milik tamu, jadi di sinilah
+   * tempat yang tepat untuk menyimpannya — tanpa itu, id pesanan lenyap
+   * bersama halaman ini dan tamu tidak punya jalan kembali ke tagihannya.
+   */
   const keStatus = useCallback(
     (orderId: string, status?: 'sukses' | 'menunggu') => {
+      mulai({
+        orderId,
+        cafeId: orderRef.current?.cafeId ?? table?.cafeId ?? '',
+        queueNumber: orderRef.current?.queueNumber ?? null,
+        // Masih boleh ditambah sampai halaman status mendengar dari server
+        // bahwa pesanannya sudah lunas atau sudah masuk dapur.
+        bisaDitambah: true,
+      });
       clearCart();
       navigate(`/pesanan/${orderId}${status ? `?status=${status}` : ''}`, {
         replace: true,
       });
     },
-    [clearCart, navigate],
+    [clearCart, mulai, navigate, table?.cafeId],
   );
 
   /** Jalur utama: buat transaksi Snap lalu buka popup Midtrans. */
@@ -227,14 +307,23 @@ export default function CheckoutPage() {
     }
   };
 
-  /** Jalur manual: pesanan dititipkan ke kasir untuk dikonfirmasi. */
-  const kirimKeKasir = async (_metode: ManualMethodCode) => {
+  /**
+   * Jalur manual: pesanan DIAJUKAN ke kasir untuk diverifikasi.
+   *
+   * Sebelumnya fungsi ini hanya membuat pesanan lalu berpindah halaman —
+   * metode yang dipilih tamu tidak pernah sampai ke server, sehingga kasir
+   * melihat antrean pesanan tanpa tahu siapa yang mengaku sudah transfer dan
+   * siapa yang akan membayar tunai di depannya. Sekarang pilihannya dikirim,
+   * dan pesanan berpindah ke status "menunggu verifikasi".
+   */
+  const kirimKeKasir = async (metode: ManualMethodCode) => {
     setError(null);
     setBusy(true);
     try {
       const orderId = await pastikanOrder();
+      await pembayaranApi.ajukanManual({ orderId, metode });
       setManualOpen(false);
-      keStatus(orderId);
+      keStatus(orderId, 'menunggu');
     } catch (err) {
       setError(describeApiError(err, 'Pesanan gagal dikirim. Coba lagi.'));
     } finally {
@@ -265,9 +354,11 @@ export default function CheckoutPage() {
 
   const tombolLabel = busy
     ? 'Memproses…'
-    : jalur
-      ? JALUR[jalur].tombol
-      : 'Bayar Sekarang';
+    : menambahKe
+      ? 'Tambah & Lanjut Bayar'
+      : jalur
+        ? JALUR[jalur].tombol
+        : 'Bayar Sekarang';
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col bg-slate-100 shadow-xl">
@@ -309,10 +400,26 @@ export default function CheckoutPage() {
           </p>
         )}
 
+        {/* Mode "tambah": tamu harus tahu bahwa yang tampil di layar ini
+            hanyalah TAMBAHANNYA, dan bahwa yang ditagih nanti adalah gabungan
+            dengan pesanan sebelumnya. Tanpa keterangan ini, total di kaki
+            halaman terbaca sebagai seluruh tagihan dan tamu merasa ditagih dua
+            kali saat angka sebenarnya muncul di layar pembayaran. */}
+        {menambahKe && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3.5 text-sm leading-relaxed text-amber-900">
+            Item ini akan <strong>ditambahkan</strong> ke pesanan{' '}
+            <span className="font-bold tabular-nums">
+              {nomorAntrian(menambahKe.queueNumber)}
+            </span>{' '}
+            yang belum dibayar. Tagihannya digabung menjadi satu — kamu cukup
+            membayar sekali.
+          </div>
+        )}
+
         {/* Ringkasan pesanan */}
         <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
-            Ringkasan Pesanan
+            {menambahKe ? 'Item yang ditambahkan' : 'Ringkasan Pesanan'}
           </h2>
           <ul className="divide-y divide-slate-100">
             {lines.map((line) => (
@@ -345,8 +452,8 @@ export default function CheckoutPage() {
             <div className="h-16 animate-pulse rounded-xl bg-slate-100" />
           ) : tersedia.length === 0 ? (
             <div className="flex items-center gap-3 rounded-2xl bg-amber-50 p-3.5">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-xl shadow-sm">
-                🧾
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-amber-600 shadow-sm">
+                <PaymentIcon name="alert" size={22} />
               </span>
               <div className="min-w-0">
                 <p className="font-semibold text-slate-900">Belum ada metode aktif</p>
@@ -377,8 +484,8 @@ export default function CheckoutPage() {
                         : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xl">
-                      {info.ikon}
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                      <PaymentIcon name={info.ikon} size={22} />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block font-semibold text-slate-900">{info.nama}</span>
@@ -402,7 +509,9 @@ export default function CheckoutPage() {
       {/* Total + bayar */}
       <footer className="sticky bottom-0 border-t border-slate-200 bg-white px-4 pb-5 pt-4">
         <div className="mb-3 flex items-center justify-between">
-          <span className="text-sm text-slate-500">Total ({totalItems} item)</span>
+          <span className="text-sm text-slate-500">
+            {menambahKe ? 'Total tambahan' : 'Total'} ({totalItems} item)
+          </span>
           <span className="text-xl font-bold text-slate-900 tabular-nums">
             {formatRupiah(totalAmount)}
           </span>
@@ -420,6 +529,7 @@ export default function CheckoutPage() {
       {manualOpen && opsi && (
         <ManualMethodModal
           metodeDiterima={opsi.metodeDiterima}
+          metodeDetail={opsi.metodeDetail}
           amount={totalAmount}
           busy={busy}
           error={error}

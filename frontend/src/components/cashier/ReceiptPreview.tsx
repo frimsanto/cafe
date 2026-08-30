@@ -58,8 +58,10 @@ export default function ReceiptPreview({
           <dd className="text-right">{order.id}</dd>
         </div>
         <div className="flex justify-between gap-2">
-          <dt>Meja</dt>
-          <dd className="text-right">{order.tableName}</dd>
+          {/* Bawa pulang tidak punya meja; barisnya menyebut jenisnya supaya
+              struk tetap menjawab pertanyaan yang sama. */}
+          <dt>{order.tableName ? 'Meja' : 'Jenis'}</dt>
+          <dd className="text-right">{order.tableName ?? 'Bawa Pulang'}</dd>
         </div>
         <div className="flex justify-between gap-2">
           <dt>Waktu</dt>

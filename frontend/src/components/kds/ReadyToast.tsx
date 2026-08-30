@@ -1,5 +1,10 @@
 export interface ReadyToastData {
   id: string;
+  /**
+   * Ke mana pesanan ini ditujukan: nama meja, atau nomor antrian bila dibawa
+   * pulang. Sudah berupa teks siap tampil (`labelTujuan()`), bukan nama meja
+   * mentah — pesanan bawa pulang tidak punya meja untuk disebut.
+   */
   tableName: string;
 }
 

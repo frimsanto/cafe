@@ -3,6 +3,7 @@ import { useCart } from '../cart/CartContext';
 import { formatRupiah } from '../lib/format';
 import { useTableSession } from '../table/TableSessionContext';
 import CartLineCard from '../components/cart/CartLineCard';
+import PesananAktifBanner from '../components/order/PesananAktifBanner';
 
 /**
  * Halaman keranjang: pelanggan meninjau item, mengubah jumlah, menambah catatan
@@ -18,6 +19,7 @@ export default function CartPage() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col bg-slate-100 shadow-xl">
+      <PesananAktifBanner />
       {/* Header */}
       <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3">
         <button

@@ -36,3 +36,6 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Backup lokal sebelum perubahan besar (dibuat manual, jangan di-commit)
+.backup/

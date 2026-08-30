@@ -11,6 +11,12 @@ export interface CreateOrderInput {
   items: CreateOrderItemInput[];
 }
 
+/** Body untuk menambah item ke pesanan yang sudah ada — tanpa `tableId`:
+    mejanya sudah melekat pada pesanan itu dan tidak boleh berpindah. */
+export interface AddOrderItemsInput {
+  items: CreateOrderItemInput[];
+}
+
 const MAX_QTY = 99;
 const MAX_LINES = 100;
 const MAX_NOTES = 500;
@@ -29,19 +35,25 @@ function nonEmptyString(value: unknown, field: string): string {
   return value.trim();
 }
 
-/** Validasi & normalisasi body untuk membuat pesanan baru. */
-export function parseCreateOrderInput(body: unknown): CreateOrderInput {
-  const obj = asRecord(body);
-  const tableId = nonEmptyString(obj.tableId, 'tableId');
-
-  if (!Array.isArray(obj.items) || obj.items.length === 0) {
+/**
+ * Validasi & normalisasi daftar item — aturan yang sama persis dipakai saat
+ * membuat pesanan baru MAUPUN saat menambah item ke pesanan yang sudah ada.
+ *
+ * Sengaja satu fungsi: kalau batas jumlah/catatan hanya diperketat di salah
+ * satu jalur, jalur yang lain menjadi pintu belakang untuk data yang ditolak
+ * di pintu depan. Layar kasir (POS) memakainya lewat
+ * `cashier.validation.ts` — keranjang yang disusun kasir tunduk pada batas
+ * yang sama persis dengan keranjang yang disusun tamu.
+ */
+export function parseItems(value: unknown): CreateOrderItemInput[] {
+  if (!Array.isArray(value) || value.length === 0) {
     throw ApiError.badRequest('Pesanan harus memuat minimal satu item');
   }
-  if (obj.items.length > MAX_LINES) {
+  if (value.length > MAX_LINES) {
     throw ApiError.badRequest(`Terlalu banyak item (maksimal ${MAX_LINES})`);
   }
 
-  const items = obj.items.map((raw, index): CreateOrderItemInput => {
+  return value.map((raw, index): CreateOrderItemInput => {
     const item = asRecord(raw);
     const menuItemId = nonEmptyString(item.menuItemId, `items[${index}].menuItemId`);
 
@@ -67,6 +79,18 @@ export function parseCreateOrderInput(body: unknown): CreateOrderInput {
 
     return { menuItemId, quantity, notes };
   });
+}
 
-  return { tableId, items };
+/** Validasi & normalisasi body untuk membuat pesanan baru. */
+export function parseCreateOrderInput(body: unknown): CreateOrderInput {
+  const obj = asRecord(body);
+  return {
+    tableId: nonEmptyString(obj.tableId, 'tableId'),
+    items: parseItems(obj.items),
+  };
+}
+
+/** Validasi & normalisasi body untuk menambah item ke pesanan yang ada. */
+export function parseAddOrderItemsInput(body: unknown): AddOrderItemsInput {
+  return { items: parseItems(asRecord(body).items) };
 }

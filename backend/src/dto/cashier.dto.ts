@@ -5,9 +5,10 @@ import {
 } from './order.dto';
 
 /**
- * Pesanan untuk layar kasir — sama dengan `OrderDTO` plus nama meja.
+ * Pesanan untuk layar kasir — sama dengan `OrderDTO` plus nama meja, ringkasan
+ * pembayaran manual, dan nama staf yang memutuskannya.
  *
- * Bentuknya kini dipakai bersama Layar Dapur, jadi definisinya tinggal di
+ * Bentuknya dipakai bersama Layar Dapur, jadi definisinya tinggal di
  * `order.dto.ts`; nama `CashierOrderDTO` dipertahankan agar kode kasir yang
  * sudah ada tidak perlu ikut berubah.
  */

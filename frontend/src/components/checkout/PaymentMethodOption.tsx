@@ -1,4 +1,5 @@
 import type { ManualMethodOption } from '../../data/paymentMethods';
+import PaymentIcon from '../payment/PaymentIcon';
 
 interface PaymentMethodOptionProps {
   method: ManualMethodOption;
@@ -17,14 +18,14 @@ export default function PaymentMethodOption({
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      className={`flex w-full items-center gap-3 rounded-2xl border-2 bg-white p-3.5 text-left transition ${
+      className={`flex w-full items-center gap-3 rounded-2xl border-2 bg-white p-3.5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ${
         selected
           ? 'border-brand-500 ring-2 ring-brand-100'
           : 'border-slate-200 hover:border-slate-300'
       }`}
     >
-      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xl">
-        {method.icon}
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+        <PaymentIcon name={method.icon} size={22} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block font-semibold text-slate-900">{method.name}</span>

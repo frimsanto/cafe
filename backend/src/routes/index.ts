@@ -12,6 +12,7 @@ import { dashboardRouter } from './dashboard.routes';
 import { authRouter } from './auth.routes';
 import { publikRouter } from './publik.routes';
 import { uploadRouter } from './upload.routes';
+import { debugRouter } from './debug.routes';
 
 /** Router utama API — semua endpoint domain dipasang di bawah `/api`. */
 export const apiRouter = Router();
@@ -29,3 +30,4 @@ apiRouter.use(authRouter);
 apiRouter.use(publikRouter);
 apiRouter.use(dashboardRouter);
 apiRouter.use(uploadRouter);
+apiRouter.use(debugRouter);

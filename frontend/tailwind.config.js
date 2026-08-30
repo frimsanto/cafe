@@ -16,6 +16,20 @@ export default {
           800: '#115e59',
           900: '#134e4a',
         },
+        // Hijau "Forest" — aksen utama halaman status pesanan pelanggan.
+        // 600 adalah warna merek yang dipakai kartu status & tombol utama.
+        forest: {
+          50: '#eef7f2',
+          100: '#d5ebe0',
+          200: '#aad7c1',
+          300: '#77bd9c',
+          400: '#4a9d78',
+          500: '#2b7d5b',
+          600: '#1a5c3a',
+          700: '#154a2f',
+          800: '#113a25',
+          900: '#0d2c1d',
+        },
         // Palet "Cafe Ambient" — mencerminkan src/styles/tokens.css agar bisa
         // dipakai sebagai utility (mis. bg-warm-cream, text-warm-espresso) dan
         // mendukung modifier opacity (border-warm-espresso/10). Nilainya harus

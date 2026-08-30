@@ -22,4 +22,13 @@ export class ApiError extends Error {
   static conflict(message: string) {
     return new ApiError(409, message);
   }
+
+  /**
+   * Server yang salah, bukan permintaannya — mis. konfigurasi yang belum
+   * lengkap. Pesannya tetap ditulis untuk dibaca manusia dan TIDAK PERNAH
+   * memuat rahasia; yang boleh disebut hanya nama variabel/langkahnya.
+   */
+  static internal(message = 'Terjadi kesalahan pada server') {
+    return new ApiError(500, message);
+  }
 }

@@ -3,8 +3,10 @@ import type { ManualMethodCode, Order } from '../../types/order';
 import type { PaymentConfigDTO } from '../../types/api';
 import { formatRupiah, formatThousands, parseAmountInput } from '../../lib/format';
 import { manualMethods } from '../../data/paymentMethods';
+import { labelTujuan } from '../../lib/orderStatus';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import ModalScrollArea from '../common/ModalScrollArea';
+import PaymentIcon from '../payment/PaymentIcon';
 
 /** Rincian uang tunai yang diterima kasir; `null` untuk metode non-tunai. */
 export interface CashDetail {
@@ -24,6 +26,8 @@ interface PaymentModalProps {
     nominal: number,
     catatan: string | null,
     cash: CashDetail | null,
+    /** Nomor referensi transfer / approval EDC; null bila tidak relevan. */
+    referensi: string | null,
   ) => void;
   onMidtrans: () => void;
   onClose: () => void;
@@ -64,6 +68,7 @@ export default function PaymentModal({
   const [method, setMethod] = useState<Selection>(initial);
   const [cashInput, setCashInput] = useState('');
   const [catatan, setCatatan] = useState('');
+  const [referensi, setReferensi] = useState('');
 
   useBodyScrollLock();
 
@@ -85,16 +90,27 @@ export default function PaymentModal({
 
   const submitManual = () => {
     if (method === null || method === 'MIDTRANS' || cashShort) return;
+    const ref = referensi.trim() || null;
     if (method === 'TUNAI') {
       if (cashReceived === null || change === null) return;
-      onManualConfirm('TUNAI', cashReceived, catatan.trim() || null, {
-        received: cashReceived,
-        change,
-      });
+      onManualConfirm(
+        'TUNAI',
+        cashReceived,
+        catatan.trim() || null,
+        { received: cashReceived, change },
+        null,
+      );
     } else {
-      onManualConfirm(method, total, catatan.trim() || null, null);
+      onManualConfirm(method, total, catatan.trim() || null, null, ref);
     }
   };
+
+  /**
+   * Rincian metode yang sudah disetel pemilik (rekening tujuan, nama merchant
+   * QRIS). Ditampilkan ke kasir supaya ia bisa mencocokkan bukti yang
+   * ditunjukkan tamu tanpa membuka halaman pengaturan di tab lain.
+   */
+  const detail = config.metodeDetail?.find((d) => d.metode === method);
 
   return (
     <div
@@ -109,7 +125,7 @@ export default function PaymentModal({
         <div className="flex shrink-0 items-start justify-between gap-3 px-5 pb-4 pt-5">
           <div className="min-w-0">
             <h2 id="bayar-title" className="text-lg font-bold text-warm-espresso">
-              Pembayaran {order.tableName}
+              Pembayaran {labelTujuan(order)}
             </h2>
             <p className="truncate font-mono text-xs text-warm-muted">{order.id}</p>
           </div>
@@ -161,7 +177,9 @@ export default function PaymentModal({
                   onClick={() => setMethod(m.code)}
                   className="flex w-full items-center gap-3 rounded-2xl bg-warm-paper px-4 py-3 text-left shadow-sm ring-1 ring-warm-line transition hover:bg-warm-espresso/5"
                 >
-                  <span className="text-xl">{m.icon}</span>
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-warm-espresso/5 text-warm-subtle">
+                    <PaymentIcon name={m.icon} size={18} />
+                  </span>
                   <span className="min-w-0">
                     <span className="block font-semibold text-warm-espresso">{m.name}</span>
                     <span className="block text-xs text-warm-muted">{m.description}</span>
@@ -175,7 +193,9 @@ export default function PaymentModal({
                   onClick={() => setMethod('MIDTRANS')}
                   className="flex w-full items-center gap-3 rounded-2xl bg-warm-paper px-4 py-3 text-left shadow-sm ring-1 ring-warm-amber/50 transition hover:bg-warm-amber/5"
                 >
-                  <span className="text-xl">🔵</span>
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-warm-amber/15 text-warm-subtle">
+                    <PaymentIcon name="online" size={18} />
+                  </span>
                   <span className="min-w-0">
                     <span className="block font-semibold text-warm-espresso">
                       GoPay / QRIS Dinamis / Virtual Account
@@ -268,9 +288,69 @@ export default function PaymentModal({
                   </div>
                 </div>
               ) : (
-                <div className="rounded-xl bg-warm-paper px-4 py-3 text-sm text-warm-subtle ring-1 ring-warm-line">
-                  Konfirmasi setelah menerima pembayaran sebesar{' '}
-                  <span className="font-bold text-warm-espresso">{formatRupiah(total)}</span>.
+                <div className="space-y-3">
+                  <div className="rounded-xl bg-warm-paper px-4 py-3 text-sm text-warm-subtle ring-1 ring-warm-line">
+                    Konfirmasi setelah menerima pembayaran sebesar{' '}
+                    <span className="font-bold text-warm-espresso">{formatRupiah(total)}</span>.
+                  </div>
+
+                  {/* Rincian tujuan pembayaran — supaya kasir mencocokkan bukti
+                      tamu tanpa membuka halaman pengaturan. */}
+                  {method === 'TRANSFER' && detail?.bankNomorRekening && (
+                    <dl className="rounded-xl bg-warm-paper px-4 py-3 text-sm ring-1 ring-warm-line">
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-warm-muted">Bank</dt>
+                        <dd className="font-semibold text-warm-espresso">{detail.bankNama}</dd>
+                      </div>
+                      <div className="mt-1 flex justify-between gap-3">
+                        <dt className="text-warm-muted">Rekening</dt>
+                        <dd className="font-mono font-semibold text-warm-espresso tabular-nums">
+                          {detail.bankNomorRekening}
+                        </dd>
+                      </div>
+                      <div className="mt-1 flex justify-between gap-3">
+                        <dt className="text-warm-muted">Atas nama</dt>
+                        <dd className="text-right font-semibold text-warm-espresso">
+                          {detail.bankAtasNama}
+                        </dd>
+                      </div>
+                    </dl>
+                  )}
+
+                  {method === 'QRIS_STATIS' && detail?.qrisMerchantName && (
+                    <p className="rounded-xl bg-warm-paper px-4 py-3 text-sm text-warm-subtle ring-1 ring-warm-line">
+                      Pastikan bukti tamu tertuju ke merchant{' '}
+                      <span className="font-semibold text-warm-espresso">
+                        {detail.qrisMerchantName}
+                      </span>
+                      .
+                    </p>
+                  )}
+
+                  {detail?.instruksi && (
+                    <p className="rounded-xl bg-warm-cream px-4 py-3 text-xs leading-relaxed text-warm-subtle">
+                      {detail.instruksi}
+                    </p>
+                  )}
+
+                  <div>
+                    <label
+                      htmlFor="referensi-bayar"
+                      className="mb-1 block text-sm font-medium text-warm-subtle"
+                    >
+                      Nomor referensi (opsional)
+                    </label>
+                    <input
+                      id="referensi-bayar"
+                      type="text"
+                      value={referensi}
+                      onChange={(e) => setReferensi(e.target.value)}
+                      placeholder={
+                        method === 'EDC' ? 'No. approval EDC' : 'No. referensi transfer'
+                      }
+                      className="w-full rounded-xl border-0 bg-warm-paper py-2.5 px-3.5 text-sm text-warm-espresso shadow-sm ring-1 ring-warm-line focus:outline-none focus:ring-2 focus:ring-warm-amber"
+                    />
+                  </div>
                 </div>
               )}
 

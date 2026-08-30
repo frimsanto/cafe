@@ -1,4 +1,5 @@
 import type { PaymentMethod } from '@prisma/client';
+import type { StatusPembayaran } from './paymentStatus';
 
 // Sumber kebenaran metode & status pembayaran domain BARU (berbasis string),
 // dipakai bersama jalur manual & Midtrans. Dipisah agar route, service, dan
@@ -14,6 +15,36 @@ export type ManualMethod = (typeof MANUAL_METHODS)[number];
 export function isManualMethod(value: unknown): value is ManualMethod {
   return typeof value === 'string' && (MANUAL_METHODS as readonly string[]).includes(value);
 }
+
+/**
+ * Apakah sebuah metode BOLEH ditawarkan di checkout mandiri pelanggan.
+ *
+ * Ini aturan domain, bukan preferensi yang bisa disetel pemilik: Tunai dan EDC
+ * menuntut kasir yang hadir memegang uang atau mesinnya. Menawarkannya di HP
+ * tamu hanya melahirkan pesanan yang menyatakan dirinya sudah dibayar padahal
+ * tidak ada siapa pun yang menerima apa pun. Validasi menolak permintaan yang
+ * mencoba menyalakannya, dan pengecekan diulang di service — bukan cuma di UI.
+ */
+export const BOLEH_DI_CHECKOUT: Record<ManualMethod, boolean> = {
+  TUNAI: false,
+  QRIS_STATIS: true,
+  TRANSFER: true,
+  EDC: false,
+};
+
+/**
+ * Metode yang uangnya BELUM tentu diterima saat pelanggan menekan "bayar".
+ *
+ * Pesanan lewat metode ini masuk sebagai AWAITING_VERIFICATION dan menunggu
+ * kasir. Tunai & EDC tidak ada di sini karena keduanya memang hanya bisa
+ * dikonfirmasi kasir sejak awal.
+ */
+export const PERLU_VERIFIKASI: Record<ManualMethod, boolean> = {
+  TUNAI: true,
+  QRIS_STATIS: true,
+  TRANSFER: true,
+  EDC: true,
+};
 
 /**
  * Label manusiawi untuk kode metode. Mencakup kode manual (jalur baru) DAN nilai
@@ -66,12 +97,16 @@ export function manualMethodToEnum(method: ManualMethod): PaymentMethod {
 
 // ── Pemetaan payload Midtrans ────────────────────────────────────────────────
 
-/** Status domain kita, lintas jalur pembayaran. */
-export type StatusPembayaran = 'MENUNGGU' | 'LUNAS' | 'GAGAL';
-
 /**
  * Terjemahkan `transaction_status` (+ `fraud_status`) Midtrans ke status domain.
- * `capture` yang masih `challenge` diperlakukan sebagai MENUNGGU (belum pasti).
+ *
+ * Setiap status Midtrans dipetakan EKSPLISIT — tidak ada lagi `default` yang
+ * diam-diam berarti "belum dibayar". Itu penting untuk `refund`/`partial_refund`:
+ * sebelumnya keduanya jatuh ke default dan mengembalikan pesanan yang sudah
+ * lunas ke status menunggu, seolah tamunya belum pernah membayar.
+ *
+ * `capture` yang masih `challenge` sengaja BUKAN lunas — Midtrans belum
+ * memutuskan, jadi uangnya belum boleh dianggap masuk.
  */
 export function mapMidtransStatus(
   transactionStatus: string | undefined,
@@ -79,18 +114,24 @@ export function mapMidtransStatus(
 ): StatusPembayaran {
   switch (transactionStatus) {
     case 'capture':
-      return fraudStatus === 'challenge' ? 'MENUNGGU' : 'LUNAS';
+      return fraudStatus === 'challenge' ? 'UNPAID' : 'PAID';
     case 'settlement':
-      return 'LUNAS';
+      return 'PAID';
     case 'pending':
-      return 'MENUNGGU';
+      return 'UNPAID';
     case 'deny':
-    case 'cancel':
-    case 'expire':
     case 'failure':
-      return 'GAGAL';
+      return 'FAILED';
+    case 'cancel':
+      return 'CANCELLED';
+    case 'expire':
+      return 'EXPIRED';
+    case 'refund':
+      return 'REFUNDED';
+    case 'partial_refund':
+      return 'PARTIALLY_REFUNDED';
     default:
-      return 'MENUNGGU';
+      return 'UNPAID';
   }
 }
 
@@ -141,26 +182,29 @@ export function midtransPaymentTypeToEnum(paymentType: string | undefined): Paym
 
 /**
  * Terjemahkan status transaksi DOKU ke status domain. DOKU hanya memberi tahu
- * hasil akhir lewat notifikasi, jadi apa pun yang belum jelas dianggap MENUNGGU
- * (bukan GAGAL) supaya pesanan tidak ditandai gagal karena status tak dikenal.
+ * hasil akhir lewat notifikasi, jadi apa pun yang belum jelas dianggap UNPAID
+ * (bukan FAILED) supaya pesanan tidak ditandai gagal karena status tak dikenal.
  */
 export function mapDokuStatus(transactionStatus: string | undefined): StatusPembayaran {
   switch (transactionStatus?.toUpperCase()) {
     case 'SUCCESS':
     case 'SETTLEMENT':
     case 'PAID':
-      return 'LUNAS';
+      return 'PAID';
     case 'PENDING':
     case 'PROCESSING':
-      return 'MENUNGGU';
+      return 'UNPAID';
     case 'FAILED':
+      return 'FAILED';
     case 'EXPIRED':
+      return 'EXPIRED';
     case 'CANCELLED':
     case 'CANCELED':
+      return 'CANCELLED';
     case 'REFUNDED':
-      return 'GAGAL';
+      return 'REFUNDED';
     default:
-      return 'MENUNGGU';
+      return 'UNPAID';
   }
 }
 

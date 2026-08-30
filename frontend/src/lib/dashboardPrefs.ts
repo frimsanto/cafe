@@ -6,6 +6,7 @@ export const DASHBOARD_PREFS_STORAGE_KEY = 'cafeos-dashboard-prefs';
 /** Semua widget tampil secara bawaan. */
 export const DEFAULT_PREFS: DashboardPreferences = {
   revenue: true,
+  revenueToday: true,
   ordersToday: true,
   activeOrders: true,
   revenueTrend: true,
@@ -24,6 +25,12 @@ export const WIDGET_OPTIONS: {
     label: 'Omzet',
     description: 'Total pendapatan dengan pemilih periode',
     icon: '💰',
+  },
+  {
+    key: 'revenueToday',
+    label: 'Omzet Hari Ini',
+    description: 'Pendapatan hari ini beserta trennya',
+    icon: '🪙',
   },
   {
     key: 'ordersToday',

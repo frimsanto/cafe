@@ -12,10 +12,14 @@ interface StatCardProps {
   deltaPercent?: number | null;
   /** Keterangan pembanding, mis. "vs kemarin". */
   deltaLabel?: string;
+  /** Kalimat pengganti saat perubahannya tepat nol, mis. "sama seperti kemarin". */
+  deltaSameLabel?: string;
   /** Keterangan tambahan bila tidak memakai delta. */
   hint?: string;
   /** Warna sub-label ketika memakai `hint` (default: netral/muted). */
   hintTone?: StatTone;
+  /** Pemformat angka — mis. `formatRupiah` untuk kartu bernominal uang. */
+  format?: (value: number) => string;
 }
 
 const TONE_COLOR: Record<StatTone, string> = {
@@ -24,9 +28,14 @@ const TONE_COLOR: Record<StatTone, string> = {
   muted: 'var(--color-muted)',
 };
 
+/**
+ * Besar perubahan tanpa tanda — arahnya sudah dibawa panah di sebelahnya.
+ *
+ * Sebelumnya nilai negatif dicetak apa adanya sehingga terbaca "↓ -25.0%":
+ * dua penanda arah untuk satu perubahan, dan sekilas mudah terbaca terbalik.
+ */
 function formatDelta(percent: number): string {
-  const sign = percent > 0 ? '+' : '';
-  return `${sign}${percent.toFixed(1)}%`;
+  return `${Math.abs(percent).toFixed(1)}%`;
 }
 
 /**
@@ -39,11 +48,22 @@ export default function StatCard({
   value,
   deltaPercent,
   deltaLabel,
+  deltaSameLabel,
   hint,
   hintTone = 'muted',
+  format = formatThousands,
 }: StatCardProps) {
   const hasDelta = typeof deltaPercent === 'number';
-  const positive = hasDelta && deltaPercent >= 0;
+  /**
+   * Tiga keadaan, bukan dua.
+   *
+   * Sebelumnya "naik" didefinisikan sebagai `>= 0`, sehingga perubahan NOL
+   * ditampilkan hijau dengan panah naik — kartu berbunyi "↑ +0.0% vs kemarin",
+   * yang membaca sebagai kabar baik padahal tidak ada yang berubah. Nol kini
+   * punya tampilannya sendiri: netral, tanpa panah.
+   */
+  const naik = hasDelta && deltaPercent > 0;
+  const tetap = hasDelta && deltaPercent === 0;
 
   return (
     <article
@@ -73,21 +93,25 @@ export default function StatCard({
         }}
       >
         {typeof value === 'number' ? (
-          <OdometerNumber value={value} format={formatThousands} />
+          <OdometerNumber value={value} format={format} />
         ) : (
           value
         )}
       </div>
 
-      {hasDelta ? (
+      {tetap ? (
+        <p className="mt-1.5" style={{ fontSize: 12, color: 'var(--color-muted)' }}>
+          {deltaSameLabel ?? 'tidak berubah'}
+        </p>
+      ) : hasDelta ? (
         <p className="mt-1.5 flex items-center gap-1" style={{ fontSize: 12 }}>
           <span
             style={{
               fontWeight: 500,
-              color: positive ? 'var(--color-success)' : '#b4231c',
+              color: naik ? 'var(--color-success)' : '#b4231c',
             }}
           >
-            {positive ? '↑' : '↓'} {formatDelta(deltaPercent)}
+            {naik ? '↑' : '↓'} {formatDelta(deltaPercent)}
           </span>
           {deltaLabel && (
             <span style={{ color: 'var(--color-muted)' }}>{deltaLabel}</span>

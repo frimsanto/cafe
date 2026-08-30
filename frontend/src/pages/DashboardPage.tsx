@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../auth/AuthContext';
 import { dashboardApi } from '../api/dashboard';
 import { kitchenApi } from '../api/orders';
 import { subscribeRealtime } from '../lib/realtime';
+import { formatRupiah } from '../lib/format';
 import { useDashboardPrefs } from '../hooks/useDashboardPrefs';
 import AppLayout from '../components/layout/AppLayout';
 import StatCard from '../components/dashboard/StatCard';
@@ -12,6 +13,32 @@ import RevenuePanel from '../components/dashboard/RevenuePanel';
 import TopMenuList from '../components/dashboard/TopMenuList';
 import DashboardSettingsPanel from '../components/dashboard/DashboardSettingsPanel';
 import DecryptedText from '../components/dashboard/DecryptedText';
+
+/**
+ * Grafik tren dimuat terpisah, bukan ikut bundel utama.
+ *
+ * Recharts menambah ~360 kB pada berkas JS yang dipakai SELURUH halaman —
+ * termasuk menu, keranjang, dan status pesanan yang dibuka tamu dari ponsel di
+ * meja, yang tidak akan pernah menggambar satu grafik pun. Dipisah begini,
+ * ongkosnya hanya dibayar pemilik saat membuka dasbor.
+ */
+const RevenueTrendChart = lazy(
+  () => import('../components/dashboard/RevenueTrendChart'),
+);
+
+/** Rangka grafik selagi potongan Recharts-nya diunduh. */
+function TrendSkeleton() {
+  return (
+    <section className="card-warm rounded-2xl px-6 py-5">
+      <div className="skeleton-warm h-4 w-24 rounded" />
+      <div
+        role="status"
+        aria-label="Memuat tren omzet"
+        className="skeleton-warm mt-4 h-56 rounded-xl"
+      />
+    </section>
+  );
+}
 
 function todayLabel(): string {
   return new Date().toLocaleDateString('id-ID', {
@@ -36,6 +63,8 @@ const PAPER_TEXTURE =
 
 /** Angka KPI ringkas di kartu atas dasbor. */
 interface OrderStats {
+  revenueToday: number;
+  revenueYesterday: number;
   ordersToday: number;
   ordersYesterday: number;
   activeOrders: number;
@@ -90,6 +119,8 @@ export default function DashboardPage() {
     useDashboardPrefs(cafeId);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [orders, setOrders] = useState<OrderStats>({
+    revenueToday: 0,
+    revenueYesterday: 0,
     ordersToday: 0,
     ordersYesterday: 0,
     activeOrders: 0,
@@ -105,6 +136,17 @@ export default function DashboardPage() {
     ]);
 
     setOrders((prev) => ({
+      // Empat angka kartu KPI datang dari SATU respons yang memang sudah
+      // diambil: `revenue?period=today` mengembalikan omzet & jumlah pesanan
+      // hari ini sekaligus pembandingnya kemarin. Memanggil endpoint tren
+      // hanya untuk ringkasan yang sama akan menambah satu perjalanan jaringan
+      // tanpa menambah satu angka pun.
+      revenueToday:
+        revenue.status === 'fulfilled' ? revenue.value.revenue : prev.revenueToday,
+      revenueYesterday:
+        revenue.status === 'fulfilled'
+          ? revenue.value.previous.revenue
+          : prev.revenueYesterday,
       ordersToday:
         revenue.status === 'fulfilled' ? revenue.value.orderCount : prev.ordersToday,
       ordersYesterday:
@@ -138,7 +180,7 @@ export default function DashboardPage() {
 
   const anyVisible = visibleCount > 0;
   const firstName = user.name.split(' ')[0];
-  const hasMetrics = prefs.ordersToday || prefs.activeOrders;
+  const hasMetrics = prefs.revenueToday || prefs.ordersToday || prefs.activeOrders;
 
   return (
     <AppLayout
@@ -243,8 +285,24 @@ export default function DashboardPage() {
 
               {hasMetrics && (
                 <div className="flex flex-col gap-2.5 sm:flex-row">
-                  {prefs.ordersToday && (
+                  {prefs.revenueToday && (
                     <Reveal delay={0.08} className="flex-1">
+                      <StatCard
+                        label="Omzet hari ini"
+                        value={orders.revenueToday}
+                        format={formatRupiah}
+                        deltaPercent={growthPercent(
+                          orders.revenueToday,
+                          orders.revenueYesterday,
+                        )}
+                        deltaLabel="vs kemarin"
+                        deltaSameLabel="sama seperti kemarin"
+                      />
+                    </Reveal>
+                  )}
+
+                  {prefs.ordersToday && (
+                    <Reveal delay={0.16} className="flex-1">
                       <StatCard
                         label="Pesanan"
                         value={orders.ordersToday}
@@ -253,12 +311,13 @@ export default function DashboardPage() {
                           orders.ordersYesterday,
                         )}
                         deltaLabel="vs kemarin"
+                        deltaSameLabel="sama seperti kemarin"
                       />
                     </Reveal>
                   )}
 
                   {prefs.activeOrders && (
-                    <Reveal delay={0.16} className="flex-1">
+                    <Reveal delay={0.24} className="flex-1">
                       <StatCard
                         label="Di dapur"
                         value={orders.activeOrders}
@@ -271,36 +330,15 @@ export default function DashboardPage() {
               )}
 
               {prefs.revenueTrend && (
-                <Reveal delay={0.24}>
-                  <section
-                    className="card-warm rounded-2xl px-6 py-5"
-                    style={{ fontFamily: 'var(--font-data)' }}
-                  >
-                    <h2
-                      style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-espresso)' }}
-                    >
-                      Tren Omzet
-                    </h2>
-                    <p className="mt-1" style={{ fontSize: 13, color: 'var(--color-muted)' }}>
-                      Grafik omzet harian akan tampil di sini.
-                    </p>
-                    <div
-                      className="mt-4 flex h-56 items-center justify-center rounded-xl"
-                      style={{
-                        border: '1px dashed var(--color-border)',
-                        backgroundColor: 'rgba(26,18,8,0.02)',
-                        fontSize: 13,
-                        color: 'var(--color-muted)',
-                      }}
-                    >
-                      Menyusul pada task berikutnya
-                    </div>
-                  </section>
+                <Reveal delay={0.32}>
+                  <Suspense fallback={<TrendSkeleton />}>
+                    <RevenueTrendChart cafeId={cafeId} />
+                  </Suspense>
                 </Reveal>
               )}
 
               {prefs.topMenu && (
-                <Reveal delay={0.32}>
+                <Reveal delay={0.4}>
                   <TopMenuList cafeId={cafeId} />
                 </Reveal>
               )}

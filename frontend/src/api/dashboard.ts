@@ -1,5 +1,13 @@
-import type { RevenueSummaryDTO, TopMenuItemDTO } from '../types/api';
-import type { DashboardPreferences, RevenuePeriod } from '../types/dashboard';
+import type {
+  RevenueSummaryDTO,
+  RevenueTrendDTO,
+  TopMenuItemDTO,
+} from '../types/api';
+import type {
+  DashboardPreferences,
+  RevenuePeriod,
+  TrendPeriod,
+} from '../types/dashboard';
 import { apiFetch, apiFetchBlob } from '../lib/apiClient';
 
 // Endpoint dasbor pemilik. Omzet & menu terlaris dihitung per periode; hanya
@@ -12,6 +20,13 @@ export const dashboardApi = {
   revenue(cafeId: string, period: RevenuePeriod): Promise<RevenueSummaryDTO> {
     return apiFetch<RevenueSummaryDTO>(
       `${cafeBase(cafeId)}/dashboard/revenue?period=${period}`,
+    );
+  },
+
+  /** Omzet harian untuk grafik tren (7 atau 30 hari terakhir). */
+  revenueTrend(cafeId: string, period: TrendPeriod): Promise<RevenueTrendDTO> {
+    return apiFetch<RevenueTrendDTO>(
+      `${cafeBase(cafeId)}/dashboard/revenue-trend?period=${period}`,
     );
   },
 

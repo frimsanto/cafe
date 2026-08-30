@@ -9,11 +9,13 @@ import type {
 } from '@prisma/client';
 import { formatRupiah } from './money';
 import { labelMetode } from './paymentMethods';
+import { nomorAntrian } from './orderCode';
 
 /** Order lengkap dengan relasi yang dibutuhkan struk. */
 export type ReceiptOrder = Order & {
   cafe: Cafe;
-  table: Table;
+  /** NULL pada pesanan bawa pulang — struknya menyebut jenisnya, bukan meja. */
+  table: Table | null;
   items: OrderItem[];
   payment: Payment | null;
   pembayaranManual: PembayaranManual | null;
@@ -81,8 +83,15 @@ export function streamReceiptPdf(stream: NodeJS.WritableStream, order: ReceiptOr
 
   // Meta pesanan.
   doc.font('Helvetica').fontSize(8).fillColor('#000000');
-  rowLR('No. Pesanan', order.id);
-  rowLR('Meja', order.table.tableName);
+  // Nomor antrian, bukan UUID: struk 80mm dipegang tamu, dan angka yang
+  // dicarinya adalah angka yang sama dengan yang tampil di layar ponselnya.
+  rowLR('No. Antrian', nomorAntrian(order.queueNumber));
+  // Bawa pulang tidak punya meja; barisnya menyebut jenis pesanannya supaya
+  // struk tetap menjawab pertanyaan yang sama ("ini untuk siapa/ke mana").
+  rowLR(
+    order.table ? 'Meja' : 'Jenis',
+    order.table ? order.table.tableName : 'Bawa Pulang',
+  );
   rowLR('Waktu', formatDateTime(order.createdAt));
   dashed();
 

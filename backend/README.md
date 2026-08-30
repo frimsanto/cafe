@@ -48,6 +48,20 @@ Daftar migrasi (urut):
 | `20260724050000_menu_management_constraints` | Index urutan/ketersediaan menu + **partial unique index** nama kategori & item |
 | `20260724060000_table_management_constraints` | Index daftar meja + **partial unique index** nama meja per kafe |
 | `20260724070000_add_order_payment_columns` | Kolom `orders.payment_method` & `orders.paid_at` (+ backfill dari `payments`) |
+| `20260726000000_tambah_payment_dua_jalur` | Kolom pembayaran dua jalur (Midtrans + manual) di `orders`, tabel `pembayaran_manual` |
+| `20260810000000_add_doku_invoice_number` | Kolom `orders.doku_invoice_number` |
+| `20260825000000_tambah_tenant_registrations` | Tabel `tenant_registrations` (+ CHECK status) |
+| `20260829000000_tambah_order_queue_number` | Kolom `orders.queue_number` (nomor antrian harian) |
+| `20260830000000_pengaturan_pembayaran` | Metode pembayaran per kafe, kredensial Midtrans per mode, audit log, idempotensi webhook |
+| `20260831000000_tambah_status_dibatalkan` | Nilai enum `OrderStatus.DIBATALKAN` (berdiri sendiri — lihat catatan di bawah) |
+| `20260831010000_kasir_pos_lengkap` | Kasir sebagai POS: `orders.table_id` boleh NULL (bawa pulang), kolom `fulfillment_type`, `order_source`, `kitchen_status` + cap waktunya, `customer_name`, `catatan`, jejak kasir/pembatalan, `idempotency_key`, dan index-nya |
+
+⚠️ `20260831000000_tambah_status_dibatalkan` sengaja berdiri sendiri: PostgreSQL
+melarang sebuah nilai enum DIPAKAI di dalam transaksi yang sama dengan yang
+menambahkannya, dan Prisma menjalankan tiap berkas migrasi dalam satu
+transaksi. Menggabungkannya dengan migrasi berikutnya akan gagal saat baris
+`DIBATALKAN` ditulis. Naskah rollback migrasi POS ada di
+`prisma/migrations/20260831010000_kasir_pos_lengkap/migration.down.sql`.
 
 ⚠️ Migrasi `..._menu_management_constraints` & `..._table_management_constraints`
 memakai **partial unique index**
@@ -138,9 +152,42 @@ membuat kafe atau akun dari permintaan publik.
 berjalan), `GET …/tables/:id/qr.png?size=` (gambar QR resolusi cetak).
 Publik: `GET /api/tables/by-qr/:qrCode` untuk pelanggan yang memindai.
 
-**Pembayaran di Kasir (KASIR/OWNER)** — `GET …/cashier/orders` (antrean FIFO),
-`POST …/cashier/orders/:id/pay` (tunai/EDC + kembalian),
-`GET …/cashier/orders/:id/receipt-data` (data struk 80mm).
+**Layar Kasir / POS (KASIR/OWNER)** — semua di bawah `/api/cafes/:cafeId`:
+
+| Endpoint | Guna |
+| --- | --- |
+| `GET …/cashier/orders?tab=&q=&fulfillmentType=&orderSource=&statusPembayaran=&limit=` | Daftar pesanan per tab. `tab` = `PERLU_KONFIRMASI` (bawaan) \| `SUDAH_DIBAYAR` \| `SEDANG_DIPROSES` \| `SELESAI` \| `SEMUA`. Tanpa parameter, jawabannya sama persis dengan versi lama endpoint ini. |
+| `GET …/cashier/summary` | Angka kepala halaman: antrean per tahap + uang masuk hari ini (jam dinding kafe). |
+| `GET …/cashier/tables` | Meja untuk pemilihan di POS: nama + keadaan (`TERSEDIA`/`TERISI`/`MENUNGGU_PEMBAYARAN`). Sengaja TANPA token QR — itu khusus OWNER. |
+| `POST …/cashier/orders` | **Baru.** Kasir membuat pesanan sendiri sekaligus menagihnya. Wajib `idempotencyKey`; pesanan + pembayaran + tiket dapur ditulis dalam SATU transaksi. Body tidak pernah memuat harga. |
+| `GET …/cashier/orders/:id` | Detail satu pesanan (isi modal rincian). |
+| `POST …/cashier/orders/:id/batal` | **Baru.** Batalkan dengan `alasan` wajib. Pesanan yang sudah lunas ditolak (409) — pengembalian dana belum didukung. |
+| `POST …/cashier/orders/:id/selesai` | **Baru.** "Diserahkan" — menutup pesanan & membebaskan mejanya. |
+| `GET …/cashier/orders/:id/receipt-data` | Data struk 80mm (JSON). |
+
+**Layar Dapur (DAPUR/OWNER)** — `GET …/kitchen/orders` (kini disaring per
+`kitchen_status`, bukan status pesanan), `PATCH …/kitchen/items/:itemId`
+(status masak satu baris), dan **baru** `PATCH …/kitchen/orders/:orderId/status`
+untuk menggerakkan SATU TIKET (`QUEUED` → `PREPARING` → `READY`). Menutup
+pesanan (`COMPLETED`) sengaja tidak bisa dari sini — itu milik kasir.
+
+Menandai pesanan yang SUDAH ADA menjadi lunas tetap hanya lewat
+`POST /api/pembayaran/manual` (manual) dan `/api/pembayaran/midtrans/*`
+(gateway); tidak ada endpoint `/pay` di area kasir.
+
+**Lima status yang terpisah** pada setiap respons pesanan — memakai satu kolom
+untuk semuanya adalah persis kekeliruan yang dibongkar modul ini:
+
+| Bidang | Nilai |
+| --- | --- |
+| `statusPesanan` (turunan) | `AWAITING_PAYMENT` \| `AWAITING_CASHIER` \| `CONFIRMED` \| `COMPLETED` \| `CANCELLED` |
+| `statusPembayaran` | `UNPAID` \| `AWAITING_VERIFICATION` \| `PAID` \| `FAILED` \| `EXPIRED` \| `CANCELLED` \| `REFUNDED` \| `PARTIALLY_REFUNDED` |
+| `kitchenStatus` | `NOT_SENT` \| `QUEUED` \| `PREPARING` \| `READY` \| `COMPLETED` |
+| `fulfillmentType` | `DINE_IN` \| `TAKEAWAY` |
+| `orderSource` | `TABLE_QR` \| `CASHIER` |
+
+`status` (enum lama) tetap dikirim demi klien lama; `tableId`/`tableName` kini
+bisa `null` pada pesanan bawa pulang.
 
 Seluruh jalur pembayaran — bayar di meja, kasir, dan callback gateway —
 melewati **satu gerbang rilis** (`services/release.service.ts`): pesanan tanpa
@@ -158,6 +205,36 @@ Lapisan pengamanan pada rute terlindungi, berurutan:
    Prisma pada model ber-tenant otomatis difilter `cafe_id`.
 
 Urutan ini disengaja: penolakan 401/403 terjadi sebelum menyentuh database.
+
+### Kanal pembayaran Midtrans (`enabled_payments`)
+
+Snap hanya menampilkan kanal yang disebut pada `enabled_payments`. Nilai yang
+salah eja **tidak** menimbulkan galat — Midtrans mengabaikannya diam-diam, dan
+kanalnya sekadar hilang dari halaman bayar. Karena itu daftarnya disusun
+`src/lib/midtransChannels.ts`, yang memvalidasi setiap nilai terhadap katalog
+identifier resmi sebelum dikirim.
+
+| Metode | Identifier Snap | Sering dikira |
+| --- | --- | --- |
+| QRIS **dinamis** Midtrans | `other_qris` | ~~`qris`~~, ~~`QRIS`~~, ~~`qris_dynamic`~~ |
+| GoPay | `gopay` | — |
+| OVO / DANA | `other_qris` (dipindai dari QRIS yang sama) | ~~`ovo`~~, ~~`dana`~~ |
+| BCA Virtual Account | `bca_va` | — |
+| BNI Virtual Account | `bni_va` | — |
+| Mandiri Bill Payment | `echannel` | ~~`mandiri_bill`~~ |
+
+`other_qris` adalah satu-satunya yang membuat QR muncul di Snap pada layar HP.
+Tanpa nilai itu Midtrans menyembunyikan QRIS di perangkat mobile; di desktop
+kekeliruannya tidak terlihat karena GoPay di layar lebar digambar sebagai QR.
+
+QRIS **statis** kafe (`QRIS_STATIS`) sama sekali bukan bagian dari daftar ini:
+QR-nya milik kafe, tidak pernah melewati Snap, dan pembayarannya selalu
+menunggu kasir.
+
+Katalog bawaan berlaku untuk semua kafe. Ubah dengan
+`MIDTRANS_ENABLED_PAYMENTS` di `.env` bila kanal yang ditawarkan perlu berbeda
+di server ini (lihat `.env.example`). Kanal yang belum aktif di akun Midtrans
+sebuah kafe tidak perlu dihilangkan — Snap hanya menampilkan yang memang aktif.
 
 ## Jalankan dengan PM2 (produksi)
 

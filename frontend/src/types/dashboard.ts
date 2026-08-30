@@ -42,9 +42,20 @@ export interface OrderStats {
   activeOrders: number;
 }
 
+/** Rentang grafik tren omzet. Terpisah dari `RevenuePeriod` — grafik bicara
+    tentang deret hari, sedangkan kartu omzet bicara tentang satu periode. */
+export type TrendPeriod = '7d' | '30d';
+
+/** Label tombol rentang grafik. Konfigurasi tampilan, bukan data. */
+export const TREND_PERIODS: { key: TrendPeriod; label: string }[] = [
+  { key: '7d', label: '7 Hari' },
+  { key: '30d', label: '30 Hari' },
+];
+
 /** Widget yang bisa ditampilkan/disembunyikan pemilik di dasbor. */
 export type DashboardWidgetKey =
   | 'revenue'
+  | 'revenueToday'
   | 'ordersToday'
   | 'activeOrders'
   | 'revenueTrend'

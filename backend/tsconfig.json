@@ -18,5 +18,8 @@
     "noImplicitReturns": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  // Berkas uji sengaja DIKELUARKAN dari build: hasilnya dikirim ke VPS,
+  // dan tidak ada gunanya (juga tidak aman) mengirimkan tiruan Prisma ke
+  // sana. Pemeriksaan tipenya tetap jalan lewat `tsconfig.test.json`.
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/test"]
 }

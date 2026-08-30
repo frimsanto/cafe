@@ -1,23 +1,33 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import type { StatusPembayaran } from '../types/order';
 import { pembayaranApi } from '../api/pembayaran';
 import { formatRupiah } from '../lib/format';
+import {
+  labelStatus,
+  nadaStatus,
+  normalisasiStatus,
+  statusFinal,
+} from '../lib/paymentStatus';
 import BadgeMetode from '../components/common/BadgeMetode';
+import PaymentIcon, { type PaymentIconName } from '../components/payment/PaymentIcon';
 import AppLayout from '../components/layout/AppLayout';
 
 const POLL_MS = 3_000;
 
 /** Petakan status awal dari query (?status=sukses|menunggu|gagal). */
-function initialFromQuery(value: string | null): string {
-  if (value === 'sukses') return 'LUNAS';
-  if (value === 'gagal') return 'GAGAL';
-  return 'MENUNGGU';
+function initialFromQuery(value: string | null): StatusPembayaran {
+  if (value === 'sukses') return 'PAID';
+  if (value === 'gagal') return 'FAILED';
+  return 'UNPAID';
 }
 
-const VIEW: Record<string, { icon: string; title: string; className: string }> = {
-  LUNAS: { icon: '✅', title: 'Lunas', className: 'text-warm-success' },
-  MENUNGGU: { icon: '⏳', title: 'Menunggu Pembayaran', className: 'text-amber-600' },
-  GAGAL: { icon: '❌', title: 'Gagal', className: 'text-rose-600' },
+/** Rupa tiap nada status: ikon + warna. Judulnya dari `labelStatus`. */
+const RUPA: Record<string, { ikon: PaymentIconName; kelas: string; latar: string }> = {
+  sukses: { ikon: 'check', kelas: 'text-warm-success', latar: 'bg-warm-success/10' },
+  menunggu: { ikon: 'clock', kelas: 'text-amber-600', latar: 'bg-amber-50' },
+  gagal: { ikon: 'x', kelas: 'text-rose-600', latar: 'bg-rose-50' },
+  netral: { ikon: 'clock', kelas: 'text-warm-subtle', latar: 'bg-warm-cream' },
 };
 
 /**
@@ -25,14 +35,14 @@ const VIEW: Record<string, { icon: string; title: string; className: string }> =
  *
  * Status awal langsung dirender dari query param (hasil callback Snap) tanpa
  * menunggu fetch, lalu polling ke server tiap 3 detik untuk memastikannya —
- * berhenti begitu LUNAS atau GAGAL.
+ * berhenti begitu status pembayarannya final.
  */
 export default function PembayaranStatusPage() {
   const { midtransOrderId = '' } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const [status, setStatus] = useState<string>(() =>
+  const [status, setStatus] = useState<StatusPembayaran>(() =>
     initialFromQuery(searchParams.get('status')),
   );
   const [metode, setMetode] = useState<string | null>(null);
@@ -47,11 +57,13 @@ export default function PembayaranStatusPage() {
       try {
         const res = await pembayaranApi.status(midtransOrderId);
         if (cancelled) return;
-        setStatus(res.status);
+        setStatus(normalisasiStatus(res.status));
         setMetode(res.metodePembayaran);
         setGrossAmount(res.grossAmount);
-        // Status final — hentikan polling.
-        if (res.status === 'LUNAS' || res.status === 'GAGAL') return;
+        // Status final — hentikan polling. "Menunggu verifikasi" TIDAK final:
+        // yang ditunggu adalah kasir menekan tombol, dan halaman ini harus
+        // terus memeriksa sampai itu terjadi.
+        if (statusFinal(res.status)) return;
       } catch {
         /* jaringan/gateway bermasalah — coba lagi pada tick berikutnya */
       }
@@ -65,21 +77,33 @@ export default function PembayaranStatusPage() {
     };
   }, [midtransOrderId]);
 
-  const view = VIEW[status] ?? VIEW.MENUNGGU;
+  const nada = nadaStatus(status);
+  const view = RUPA[nada] ?? RUPA.netral;
 
   return (
     <AppLayout title="Status Pembayaran" subtitle="Transaksi Midtrans">
       <div className="mx-auto max-w-md">
         <div className="rounded-3xl bg-warm-paper p-6 text-center shadow-sm ring-1 ring-warm-line">
-          <span className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-warm-cream text-4xl">
-            {view.icon}
+          <span
+            className={`mx-auto flex h-20 w-20 items-center justify-center rounded-full ${view.latar} ${view.kelas}`}
+          >
+            <PaymentIcon name={view.ikon} size={38} />
           </span>
-          <h2 className={`mt-4 text-2xl font-bold ${view.className}`}>{view.title}</h2>
+          <h2 className={`mt-4 text-2xl font-bold ${view.kelas}`}>
+            {labelStatus(status)}
+          </h2>
 
-          {status === 'MENUNGGU' && (
+          {status === 'UNPAID' && (
             <p className="mt-1 flex items-center justify-center gap-2 text-sm text-warm-muted">
               <span className="h-2 w-2 animate-ping rounded-full bg-amber-400" />
               Menunggu pembayaran pelanggan…
+            </p>
+          )}
+
+          {status === 'AWAITING_VERIFICATION' && (
+            <p className="mt-1 text-sm text-warm-muted">
+              Tamu mengaku sudah membayar. Periksa dulu di layar Kasir sebelum
+              menerimanya.
             </p>
           )}
 
@@ -105,7 +129,7 @@ export default function PembayaranStatusPage() {
           </dl>
 
           <div className="mt-6 space-y-2.5">
-            {status === 'LUNAS' && (
+            {status === 'PAID' && (
               <button
                 type="button"
                 onClick={() => navigate('/kasir')}
@@ -114,7 +138,7 @@ export default function PembayaranStatusPage() {
                 Cetak Struk
               </button>
             )}
-            {status === 'GAGAL' && (
+            {nada === 'gagal' && (
               <button
                 type="button"
                 onClick={() => navigate('/kasir')}

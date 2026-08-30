@@ -2,12 +2,21 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { attachUser, requireAuth, requireRole } from '../middleware/auth';
 import { tenantScope } from '../middleware/tenant';
+import { rateLimit } from '../middleware/rateLimit';
+import { uploadSingle } from '../middleware/upload';
 import { ApiError } from '../lib/ApiError';
+import { isStatusPembayaran, normalisasiStatus } from '../lib/paymentStatus';
+import { prisma } from '../lib/prisma';
 import { pembayaranService } from '../services/pembayaran.service';
+import { uploadService } from '../services/upload.service';
+import { aktorDariRequest } from '../services/auditLog.service';
 import {
   parseDokuBuatInput,
   parseManualPaymentInput,
   parseMidtransBuatInput,
+  parsePermintaanManualInput,
+  parseTolakPembayaranInput,
+  requireOrderId,
 } from '../validation/pembayaran.validation';
 
 export const pembayaranRouter = Router();
@@ -21,14 +30,27 @@ export const pembayaranRouter = Router();
  * kafe selalu diturunkan dari pesanan — sehingga tidak ada jalan menyeberang
  * tenant lewat parameter yang ditebak.
  */
-const kasirAccess = [
-  requireAuth,
-  requireRole('KASIR', 'OWNER'),
-  attachUser,
-  tenantScope,
-];
+const kasirAccess = [requireAuth, requireRole('KASIR', 'OWNER'), attachUser, tenantScope];
 
-const STATUS_VALUES = ['LUNAS', 'MENUNGGU', 'GAGAL'];
+/**
+ * Endpoint publik yang MENULIS dibatasi lajunya.
+ *
+ * Pengajuan pembayaran manual bisa dipanggil siapa pun yang memegang sebuah
+ * `orderId`. Tanpa batas ini, satu skrip bisa mengaduk-aduk antrean verifikasi
+ * kasir sampai layarnya tidak bisa dipakai.
+ */
+const batasPublik = rateLimit({
+  maks: 30,
+  jendelaMs: 5 * 60_000,
+  pesan: 'Terlalu banyak permintaan pembayaran. Tunggu sebentar lalu coba lagi.',
+});
+
+/** Unggah bukti pembayaran — lebih ketat lagi; setiap panggilan menulis berkas. */
+const batasUnggahBukti = rateLimit({
+  maks: 10,
+  jendelaMs: 10 * 60_000,
+  pesan: 'Terlalu banyak unggahan bukti. Tunggu beberapa menit lalu coba lagi.',
+});
 
 /** Baca tanggal opsional dari query; lempar bila formatnya tidak valid. */
 function parseDate(value: unknown, field: string): Date | undefined {
@@ -43,21 +65,54 @@ function parseDate(value: unknown, field: string): Date | undefined {
   return date;
 }
 
-// POST /api/pembayaran/manual — konfirmasi pembayaran manual oleh kasir.
+// ── Kasir: menagih & memverifikasi ───────────────────────────────────────────
+
+// POST /api/pembayaran/manual — kasir MENERIMA pembayaran manual.
 pembayaranRouter.post(
   '/pembayaran/manual',
   kasirAccess,
   asyncHandler(async (req, res) => {
     const input = parseManualPaymentInput(req.body);
-    const order = await pembayaranService.konfirmasiManual(req.auth!.cafeId, input);
+    const order = await pembayaranService.konfirmasiManual(
+      req.auth!.cafeId,
+      input,
+      aktorDariRequest(req),
+    );
     res.json({ berhasil: true, order });
   }),
 );
 
-// GET /api/cafes/:cafeId/pembayaran/opsi — metode yang tersedia di sebuah kafe.
-// PUBLIK: dibaca halaman checkout pelanggan untuk memilih Midtrans atau, bila
-// kafe belum menyetelnya, menampilkan daftar metode manual. Tidak pernah
-// mengembalikan kredensial apa pun.
+// POST /api/pembayaran/manual/tolak — kasir MENOLAK pengajuan pembayaran.
+pembayaranRouter.post(
+  '/pembayaran/manual/tolak',
+  kasirAccess,
+  asyncHandler(async (req, res) => {
+    const input = parseTolakPembayaranInput(req.body);
+    const order = await pembayaranService.tolakManual(
+      req.auth!.cafeId,
+      input,
+      aktorDariRequest(req),
+    );
+    res.json({ berhasil: true, order });
+  }),
+);
+
+// GET /api/pembayaran/menunggu-verifikasi — antrean pengajuan dari pelanggan.
+pembayaranRouter.get(
+  '/pembayaran/menunggu-verifikasi',
+  kasirAccess,
+  asyncHandler(async (req, res) => {
+    const data = await pembayaranService.menungguVerifikasi(req.auth!.cafeId);
+    res.json({ data });
+  }),
+);
+
+// ── Pelanggan (publik) ───────────────────────────────────────────────────────
+
+// GET /api/cafes/:cafeId/pembayaran/opsi — metode yang tersedia DI CHECKOUT.
+// PUBLIK: dibaca halaman checkout pelanggan. Tidak pernah mengembalikan
+// kredensial apa pun — hanya metode, instruksinya, dan rekening tujuan yang
+// memang harus dilihat tamu untuk bisa membayar.
 pembayaranRouter.get(
   '/cafes/:cafeId/pembayaran/opsi',
   asyncHandler(async (req, res) => {
@@ -66,11 +121,54 @@ pembayaranRouter.get(
   }),
 );
 
+// POST /api/pembayaran/manual/ajukan — pelanggan MENGAJUKAN pembayaran manual.
+// PUBLIK. Tidak ada yang menjadi lunas di sini: pesanan masuk ke antrean
+// verifikasi kasir dengan status AWAITING_VERIFICATION.
+pembayaranRouter.post(
+  '/pembayaran/manual/ajukan',
+  batasPublik,
+  asyncHandler(async (req, res) => {
+    const input = parsePermintaanManualInput(req.body);
+    const data = await pembayaranService.ajukanManual(input);
+    res.json({ data });
+  }),
+);
+
+// POST /api/pembayaran/:orderId/bukti — unggah bukti pembayaran (field: `foto`).
+// PUBLIK, tapi berlabuh pada sebuah pesanan: kafenya diturunkan dari pesanan
+// itu, jadi berkas selalu mendarat di folder kafe yang benar dan tidak ada
+// `cafeId` yang bisa dititipkan klien. Pesanan yang sudah lunas menolak
+// unggahan — tidak ada gunanya, dan itu menutup satu pintu penyalahgunaan.
+pembayaranRouter.post(
+  '/pembayaran/:orderId/bukti',
+  batasUnggahBukti,
+  uploadSingle,
+  asyncHandler(async (req, res) => {
+    if (!req.file) throw ApiError.badRequest('Belum ada bukti yang dipilih.');
+
+    // `orders.id` bertipe uuid: parameter URL yang bukan UUID membuat Prisma
+    // melempar P2023 dan berakhir 500, bukan 404 yang semestinya.
+    const orderId = requireOrderId(req.params.orderId);
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: { cafeId: true, status: true },
+    });
+    if (!order) throw ApiError.notFound('Pesanan tidak ditemukan');
+    if (order.status !== 'MENUNGGU_PEMBAYARAN') {
+      throw ApiError.conflict('Pesanan ini sudah tidak menunggu pembayaran');
+    }
+
+    const data = await uploadService.unggahBukti(order.cafeId, req.file.buffer);
+    res.status(201).json({ data });
+  }),
+);
+
 // POST /api/pembayaran/midtrans/buat — buat transaksi Snap untuk sebuah pesanan.
 // PUBLIK: pemanggilnya pelanggan di meja yang memang tidak punya akun. Kafe
 // (beserta kredensialnya) diturunkan dari pesanan, bukan dari body.
 pembayaranRouter.post(
   '/pembayaran/midtrans/buat',
+  batasPublik,
   asyncHandler(async (req, res) => {
     const { orderId } = parseMidtransBuatInput(req.body);
     const result = await pembayaranService.buatMidtrans(orderId);
@@ -79,11 +177,11 @@ pembayaranRouter.post(
 );
 
 // POST /api/pembayaran/doku/buat — buat halaman pembayaran DOKU Checkout.
-// PUBLIK: sama seperti jalur Midtrans, pemanggilnya pelanggan di meja. Kredensial
-// DOKU milik platform (dari environment), jadi tidak ada apa pun soal kafe yang
-// diterima dari body — kafe tetap diturunkan dari pesanan.
+// PUBLIK: sama seperti jalur Midtrans. Kredensial DOKU milik platform (dari
+// environment), jadi tidak ada apa pun soal kafe yang diterima dari body.
 pembayaranRouter.post(
   '/pembayaran/doku/buat',
+  batasPublik,
   asyncHandler(async (req, res) => {
     const { orderId } = parseDokuBuatInput(req.body);
     const result = await pembayaranService.buatDoku(orderId);
@@ -125,15 +223,23 @@ pembayaranRouter.get(
   kasirAccess,
   asyncHandler(async (req, res) => {
     const status = req.query.status;
+    let filterStatus;
     if (status !== undefined) {
-      if (typeof status !== 'string' || !STATUS_VALUES.includes(status)) {
-        throw ApiError.badRequest(
-          `Parameter "status" harus salah satu dari: ${STATUS_VALUES.join(', ')}`,
-        );
+      // Kosakata lama (MENUNGGU/LUNAS/GAGAL) ikut diterima: PWA kasir yang
+      // belum sempat dimuat ulang masih mengirimkannya, dan menolaknya berarti
+      // mematikan penyaring di layar yang sedang dipakai bekerja.
+      if (typeof status !== 'string') {
+        throw ApiError.badRequest('Parameter "status" harus berupa teks');
       }
+      const kanonik = normalisasiStatus(status);
+      if (!isStatusPembayaran(status) && kanonik === 'UNPAID' && status !== 'MENUNGGU') {
+        throw ApiError.badRequest(`Parameter "status" tidak dikenal: ${status}`);
+      }
+      filterStatus = kanonik;
     }
+
     const data = await pembayaranService.riwayat({
-      status: typeof status === 'string' ? status : undefined,
+      status: filterStatus,
       dari: parseDate(req.query.dari, 'dari'),
       sampai: parseDate(req.query.sampai, 'sampai'),
     });
@@ -155,6 +261,11 @@ pembayaranRouter.get(
 // POST /api/pembayaran/notifikasi/:cafeId — webhook Midtrans. PUBLIK (tanpa auth):
 // dipanggil server Midtrans, bukan pengguna. SELALU balas 200 agar gateway tidak
 // mengulang; galat internal cukup dicatat di service.
+//
+// `:cafeId` di URL HANYA menunjukkan kredensial siapa yang dipakai memverifikasi
+// signature — ia bukan mekanisme keamanan. Yang menentukan sebuah notifikasi sah
+// adalah signature-nya, dan pesanan yang disentuhnya tetap disaring `cafeId`
+// yang sama.
 pembayaranRouter.post(
   '/pembayaran/notifikasi/:cafeId',
   asyncHandler(async (req, res) => {

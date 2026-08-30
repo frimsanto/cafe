@@ -3,7 +3,12 @@ import { asyncHandler } from '../middleware/asyncHandler';
 import { attachUser, requireAuth, requireRole, requireSameCafe } from '../middleware/auth';
 import { tenantScope } from '../middleware/tenant';
 import { ApiError } from '../lib/ApiError';
-import { REVENUE_PERIODS, type RevenuePeriod } from '../lib/period';
+import {
+  REVENUE_PERIODS,
+  TREND_PERIODS,
+  type RevenuePeriod,
+  type TrendPeriod,
+} from '../lib/period';
 import { dashboardService } from '../services/dashboard.service';
 import { parsePreferencesInput } from '../validation/dashboard.validation';
 
@@ -18,6 +23,17 @@ function parsePeriod(value: unknown): RevenuePeriod {
     );
   }
   return value as RevenuePeriod;
+}
+
+/** Baca & validasi query `period` untuk grafik tren (default: 7d). */
+function parseTrendPeriod(value: unknown): TrendPeriod {
+  if (value === undefined) return '7d';
+  if (typeof value !== 'string' || !TREND_PERIODS.includes(value as TrendPeriod)) {
+    throw ApiError.badRequest(
+      `Parameter "period" harus salah satu dari: ${TREND_PERIODS.join(', ')}`,
+    );
+  }
+  return value as TrendPeriod;
 }
 
 const DEFAULT_LIMIT = 5;
@@ -45,6 +61,25 @@ dashboardRouter.get(
   asyncHandler(async (req, res) => {
     const period = parsePeriod(req.query.period);
     const data = await dashboardService.getRevenueSummary(req.params.cafeId, period);
+    res.json({ data });
+  }),
+);
+
+// GET /api/cafes/:cafeId/dashboard/revenue-trend?period=7d|30d
+// Omzet harian untuk grafik tren. Penjagaannya sama dengan endpoint dasbor
+// lain: wajib token, hanya OWNER, dan `:cafeId` harus cocok dengan kafe pada
+// token (`requireSameCafe`) — jadi pemilik satu kafe tidak bisa mengintip
+// omzet kafe lain dengan menukar id di URL.
+dashboardRouter.get(
+  '/cafes/:cafeId/dashboard/revenue-trend',
+  requireAuth,
+  requireRole('OWNER'),
+  requireSameCafe,
+  attachUser,
+  tenantScope,
+  asyncHandler(async (req, res) => {
+    const period = parseTrendPeriod(req.query.period);
+    const data = await dashboardService.getRevenueTrend(req.params.cafeId, period);
     res.json({ data });
   }),
 );

@@ -4,12 +4,16 @@ import { WS_BASE_URL } from './apiConfig';
  * Klien WebSocket realtime.
  *
  * Protokol mengikuti server (`backend/src/realtime/realtime.ts`):
- *   klien → server : { type: 'subscribe', cafeId }
+ *   klien → server : { type: 'subscribe', cafeId, orderId? }
  *   server → klien : { type: <event>, data: <payload> }
  *
  * Langganan juga dikirim lewat query saat menyambung, lalu DIULANG sebagai
  * pesan `subscribe` setelah `open`. Pengulangan ini penting: saat sambungan
  * putus dan tersambung lagi, server tidak mengingat langganan lama.
+ *
+ * `orderId` mempersempit langganan ke satu pesanan — dipakai halaman pelanggan
+ * supaya ponsel tamu tidak ikut menerima aliran pesanan kafe seluruhnya. Layar
+ * staf memanggilnya tanpa `orderId` dan tetap mendapat semuanya.
  */
 
 /** Nama event yang dipancarkan server. */
@@ -61,6 +65,8 @@ const STABLE_AFTER_MS = 10_000;
 export interface RealtimeOptions {
   /** Dipanggil setiap keadaan sambungan berubah. */
   onStatus?: (status: RealtimeStatus) => void;
+  /** Persempit langganan ke satu pesanan (halaman status pelanggan). */
+  orderId?: string;
 }
 
 /**
@@ -74,7 +80,7 @@ export function subscribeRealtime(
   onMessage: Listener,
   options: RealtimeOptions = {},
 ): () => void {
-  const { onStatus } = options;
+  const { onStatus, orderId } = options;
 
   let socket: WebSocket | null = null;
   /** Melepas listener soket yang sedang aktif — dipasang ulang tiap connect. */
@@ -105,7 +111,9 @@ export function subscribeRealtime(
     if (closed) return;
     setStatus(attempt === 0 ? 'connecting' : 'reconnecting');
 
-    const url = `${WS_BASE_URL}?cafeId=${encodeURIComponent(cafeId)}`;
+    const url =
+      `${WS_BASE_URL}?cafeId=${encodeURIComponent(cafeId)}` +
+      (orderId ? `&orderId=${encodeURIComponent(orderId)}` : '');
     let ws: WebSocket;
     try {
       ws = new WebSocket(url);
@@ -118,7 +126,7 @@ export function subscribeRealtime(
 
     const handleOpen = () => {
       setStatus('online');
-      ws.send(JSON.stringify({ type: 'subscribe', cafeId }));
+      ws.send(JSON.stringify({ type: 'subscribe', cafeId, orderId }));
       clearStableTimer();
       stableTimer = setTimeout(() => {
         stableTimer = null;

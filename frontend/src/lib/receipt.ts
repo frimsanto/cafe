@@ -2,6 +2,7 @@ import type { Order } from '../types/order';
 import type { CafeInfo } from '../types/menu';
 import { formatRupiah } from './format';
 import { labelMetode } from '../data/paymentMethods';
+import { nomorAntrian } from './orderCode';
 
 // Struk dibuat pada halaman selebar 80mm (ala printer thermal) dengan tinggi
 // dihitung dari jumlah item, lalu diunduh sebagai berkas PDF.
@@ -90,8 +91,13 @@ export async function downloadReceiptPdf(
   dashed();
 
   // Meta pesanan
-  row('No. Pesanan', order.id, { size: 8 });
-  row('Meja', order.tableName ?? '-', { size: 8 });
+  // Nomor antrian, bukan id pesanan: yang dicari tamu saat memegang struk
+  // ini adalah angka yang sama dengan yang dipanggil pelayan. UUID penuh
+  // tidak terbaca di kertas 80mm dan tidak berguna bagi siapa pun di meja.
+  row('No. Antrian', nomorAntrian(order.queueNumber), { size: 8 });
+  row(order.tableName ? 'Meja' : 'Jenis', order.tableName ?? 'Bawa Pulang', {
+    size: 8,
+  });
   row('Waktu', formatWaktu(order.createdAt), { size: 8 });
   dashed();
 
@@ -155,5 +161,5 @@ export async function downloadReceiptPdf(
   centered('Simpan struk ini sebagai bukti pembayaran.', 7);
   doc.setTextColor(0);
 
-  doc.save(`struk-${order.id}.pdf`);
+  doc.save(`struk-${nomorAntrian(order.queueNumber)}.pdf`);
 }

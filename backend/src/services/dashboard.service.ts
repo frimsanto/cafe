@@ -1,9 +1,13 @@
 import { prisma } from '../lib/prisma';
 import {
   growthPercent,
+  hariTerakhir,
+  jumlahHariTren,
+  kunciTanggal,
   resolvePeriod,
   type DateRange,
   type RevenuePeriod,
+  type TrendPeriod,
 } from '../lib/period';
 import {
   toWidgetPreferences,
@@ -30,6 +34,46 @@ export interface TopMenuItemDTO {
   imageUrl: string;
   /** Jumlah porsi terjual pada periode. */
   soldCount: number;
+}
+
+
+/** Satu batang pada grafik tren — selalu ada, meski omzetnya nol. */
+export interface RevenueTrendPointDTO {
+  /** Tanggal lokal `YYYY-MM-DD`. */
+  date: string;
+  /** Label sumbu X: nama hari (7d) atau `DD/MM` (30d). */
+  label: string;
+  totalRevenue: number;
+  totalOrders: number;
+}
+
+export interface RevenueTrendDTO {
+  period: TrendPeriod;
+  trend: RevenueTrendPointDTO[];
+  summary: {
+    todayRevenue: number;
+    todayOrders: number;
+    yesterdayRevenue: number;
+    yesterdayOrders: number;
+    /** Positif = naik, negatif = turun; null bila kemarin nol. */
+    todayVsYesterdayPercent: number | null;
+  };
+}
+
+/**
+ * Nama hari, diindeks `Date.getDay()` (0 = Minggu).
+ *
+ * Ditulis tetap alih-alih lewat `Intl`: hasil `Intl` bergantung pada data ICU
+ * yang dibundel Node, dan label sumbu grafik tidak boleh berubah hanya karena
+ * server dipasang dengan build Node yang berbeda.
+ */
+const NAMA_HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+function labelHari(tanggal: Date, period: TrendPeriod): string {
+  if (period === '7d') return NAMA_HARI[tanggal.getDay()];
+  const hari = String(tanggal.getDate()).padStart(2, '0');
+  const bulan = String(tanggal.getMonth() + 1).padStart(2, '0');
+  return `${hari}/${bulan}`;
 }
 
 export const dashboardService = {
@@ -77,6 +121,84 @@ export const dashboardService = {
       orderCount: now.orderCount,
       previous: before,
       growthPercent: growthPercent(now.revenue, before.revenue),
+    };
+  },
+
+
+  /**
+   * Omzet harian untuk grafik tren — 7 atau 30 hari terakhir, termasuk hari ini.
+   *
+   * Dasarnya sama persis dengan `getRevenueSummary`: `paidAt` + pembayaran
+   * SUKSES, bukan `createdAt` + status pesanan. Ini bukan detail sepele — kalau
+   * grafik memakai waktu pesanan DIBUAT sementara kartu omzet di atasnya
+   * memakai waktu uang DITERIMA, keduanya akan menampilkan angka berbeda untuk
+   * hari yang sama dan pemilik tidak punya cara tahu mana yang benar.
+   *
+   * Seluruh hari dalam rentang selalu muncul, termasuk yang tidak ada
+   * transaksinya (nol) — grafik yang melompati hari sepi membuat akhir pekan
+   * yang kosong terlihat seperti hari yang laris.
+   */
+  async getRevenueTrend(
+    cafeId: string,
+    period: TrendPeriod,
+  ): Promise<RevenueTrendDTO> {
+    const hari = hariTerakhir(jumlahHariTren(period));
+    const awal = hari[0].from;
+    const akhir = hari[hari.length - 1].to;
+
+    // Satu query untuk seluruh rentang, lalu dikelompokkan di sini.
+    // `groupBy` Prisma tidak bisa memotong timestamp menjadi tanggal, dan
+    // memakai SQL mentah akan menaruh aturan zona waktu di tempat kedua yang
+    // harus ikut diubah setiap kali definisi "hari" bergeser.
+    const orders = await prisma.order.findMany({
+      where: {
+        cafeId,
+        paidAt: { gte: awal, lt: akhir },
+        payment: { status: 'SUCCESS' },
+      },
+      select: { paidAt: true, totalAmount: true },
+    });
+
+    const ember = new Map(
+      hari.map((h) => [h.kunci, { totalRevenue: 0, totalOrders: 0 }]),
+    );
+
+    for (const order of orders) {
+      // `paidAt` pasti terisi — ia yang dipakai menyaring di atas.
+      const slot = ember.get(kunciTanggal(order.paidAt!));
+      if (!slot) continue;
+      slot.totalRevenue += Number(order.totalAmount);
+      slot.totalOrders += 1;
+    }
+
+    const trend: RevenueTrendPointDTO[] = hari.map((h) => {
+      const slot = ember.get(h.kunci)!;
+      return {
+        date: h.kunci,
+        label: labelHari(h.from, period),
+        totalRevenue: slot.totalRevenue,
+        totalOrders: slot.totalOrders,
+      };
+    });
+
+    // Hari ini & kemarin selalu ada di dalam rentang (minimal 7 hari), jadi
+    // ringkasannya dibaca dari ember yang sudah dihitung — tanpa query kedua.
+    const hariIni = trend[trend.length - 1];
+    const kemarin = trend[trend.length - 2];
+
+    return {
+      period,
+      trend,
+      summary: {
+        todayRevenue: hariIni.totalRevenue,
+        todayOrders: hariIni.totalOrders,
+        yesterdayRevenue: kemarin.totalRevenue,
+        yesterdayOrders: kemarin.totalOrders,
+        todayVsYesterdayPercent: growthPercent(
+          hariIni.totalRevenue,
+          kemarin.totalRevenue,
+        ),
+      },
     };
   },
 

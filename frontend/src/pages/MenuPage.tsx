@@ -7,6 +7,7 @@ import MenuHeader from '../components/menu/MenuHeader';
 import CategoryNav from '../components/menu/CategoryNav';
 import CategorySection from '../components/menu/CategorySection';
 import FloatingCartBar from '../components/cart/FloatingCartBar';
+import PesananAktifBanner from '../components/order/PesananAktifBanner';
 
 /**
  * Halaman menu digital pelanggan (dibuka via pindai QR meja).
@@ -69,6 +70,10 @@ export default function MenuPage() {
 
   return (
     <div className="mx-auto min-h-screen max-w-md bg-slate-100 shadow-xl">
+      {/* Pintu pulang ke tagihan yang belum dibayar. Tanpa ini, tamu yang
+          menekan "+ Tambah Menu" dari halaman status kehilangan jejak pesanan
+          yang sedang berjalan begitu ia mulai menelusuri menu. */}
+      <PesananAktifBanner />
       {table && (
         <MenuHeader
           cafe={{ id: table.cafeId, name: table.cafeName, tagline: '' }}

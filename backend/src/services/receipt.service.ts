@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma';
+import { ITEM_TERURUT } from '../lib/orderItems';
 import { ApiError } from '../lib/ApiError';
 import type { ReceiptOrder } from '../lib/receiptPdf';
 
@@ -13,7 +14,7 @@ export const receiptService = {
       include: {
         cafe: true,
         table: true,
-        items: true,
+        items: ITEM_TERURUT,
         payment: true,
         pembayaranManual: true,
       },

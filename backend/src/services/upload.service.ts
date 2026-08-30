@@ -19,6 +19,16 @@ export function folderMenu(cafeId: string): string {
   return `${ROOT_FOLDER}/${cafeId}/menu`;
 }
 
+/** Folder gambar QRIS statis milik sebuah kafe. */
+export function folderQris(cafeId: string): string {
+  return `${ROOT_FOLDER}/${cafeId}/qris`;
+}
+
+/** Folder bukti pembayaran yang diunggah tamu/kasir. */
+export function folderBukti(cafeId: string): string {
+  return `${ROOT_FOLDER}/${cafeId}/bukti`;
+}
+
 /** Awalan yang wajib dimiliki setiap public id milik sebuah kafe. */
 function prefixKafe(cafeId: string): string {
   return `${ROOT_FOLDER}/${cafeId}/`;
@@ -38,18 +48,20 @@ function pastikanTerkonfigurasi(): void {
 function unggahBuffer(
   buffer: Buffer,
   folder: string,
+  // Ukuran dipangkas SAAT UNGGAH, bukan saat pengiriman: foto asli dari kamera
+  // ponsel bisa belasan megapiksel dan tidak ada gunanya disimpan utuh.
+  // Bentuknya berbeda per jenis berkas — foto menu dipotong bujur sangkar,
+  // QRIS justru TIDAK BOLEH dipotong — jadi pemanggil yang menentukan.
+  transformation: Record<string, unknown>[] = [
+    { width: 800, height: 800, crop: 'fill', gravity: 'auto' },
+  ],
 ): Promise<UploadApiResponse> {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
         folder,
         resource_type: 'image',
-        // Ukuran dipangkas SAAT UNGGAH, bukan saat pengiriman: foto asli dari
-        // kamera ponsel bisa belasan megapiksel dan tidak ada gunanya disimpan
-        // utuh — yang tampil di kartu menu selalu bujur sangkar 800×800.
-        transformation: [
-          { width: 800, height: 800, crop: 'fill', gravity: 'auto' },
-        ],
+        transformation,
       },
       (error?: UploadApiErrorResponse, result?: UploadApiResponse) => {
         if (error) {
@@ -93,6 +105,58 @@ export const uploadService = {
     });
 
     return { url, publicId: hasil.public_id };
+  },
+
+  /**
+   * Unggah gambar QRIS statis milik `cafeId`.
+   *
+   * Berbeda dari foto menu, gambar ini TIDAK dipotong menjadi bujur sangkar:
+   * QR code yang terpotong tidak bisa dipindai. Ukurannya dibatasi saja
+   * (maksimal 1200 px pada sisi terpanjang) dengan `crop: 'limit'`, yang
+   * mengecilkan bila kebesaran dan membiarkannya bila sudah pas.
+   *
+   * Format pengiriman juga dibiarkan apa adanya — `f_auto` boleh memilih AVIF
+   * yang belum tentu terbaca semua pemindai QR bawaan aplikasi bank.
+   */
+  async unggahQris(cafeId: string, buffer: Buffer): Promise<HasilUnggah> {
+    pastikanTerkonfigurasi();
+
+    const hasil = await unggahBuffer(buffer, folderQris(cafeId), [
+      { width: 1200, height: 1200, crop: 'limit' },
+    ]);
+
+    return {
+      url: cloudinary.url(hasil.public_id, {
+        secure: true,
+        quality: 'auto:best',
+        version: hasil.version,
+      }),
+      publicId: hasil.public_id,
+    };
+  },
+
+  /**
+   * Unggah bukti pembayaran (transfer/QRIS) untuk sebuah kafe.
+   *
+   * Disimpan di bawah folder kafe seperti berkas lain, sehingga bukti milik
+   * satu kafe tidak pernah bisa disebut — apalagi dihapus — kafe lain.
+   */
+  async unggahBukti(cafeId: string, buffer: Buffer): Promise<HasilUnggah> {
+    pastikanTerkonfigurasi();
+
+    const hasil = await unggahBuffer(buffer, folderBukti(cafeId), [
+      { width: 1600, height: 1600, crop: 'limit' },
+    ]);
+
+    return {
+      url: cloudinary.url(hasil.public_id, {
+        secure: true,
+        fetch_format: 'auto',
+        quality: 'auto',
+        version: hasil.version,
+      }),
+      publicId: hasil.public_id,
+    };
   },
 
   /**

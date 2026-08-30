@@ -15,10 +15,17 @@ datasource db {
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
+/// Status KASAR sebuah pesanan. Rinciannya ada di tiga kolom yang terpisah —
+/// `status_pembayaran` (uang), `kitchen_status` (dapur), dan `fulfillment_type`
+/// (cara disajikan); enum ini hanya penanda babak besarnya.
+///
+/// `DIBATALKAN` ditambahkan migrasi `20260831000000_tambah_status_dibatalkan`
+/// lewat `ALTER TYPE ... ADD VALUE` (aditif, tidak menyentuh baris lama).
 enum OrderStatus {
   MENUNGGU_PEMBAYARAN
   DIPROSES_DAPUR
   SELESAI
+  DIBATALKAN
 }
 
 enum KitchenStatus {
@@ -48,6 +55,30 @@ enum Role {
   DAPUR
 }
 
+/// Mode akun Midtrans. Kredensial kedua mode disimpan TERPISAH (baris berbeda
+/// di `midtrans_credentials`) supaya kunci Sandbox tidak pernah bisa dipakai
+/// sebagai cadangan Production — uang sungguhan tidak boleh bergantung pada
+/// kunci uji coba.
+enum MidtransMode {
+  SANDBOX
+  PRODUCTION
+}
+
+/// Kanal tempat sebuah metode pembayaran manual boleh muncul.
+enum KanalPembayaran {
+  /// Layar kasir (POS) — dioperasikan staf.
+  KASIR
+  /// Checkout mandiri di HP pelanggan.
+  CHECKOUT
+}
+
+/// Keputusan kasir atas sebuah pembayaran manual.
+enum StatusVerifikasi {
+  MENUNGGU
+  DITERIMA
+  DITOLAK
+}
+
 // ── Tenant ───────────────────────────────────────────────────────────────────
 
 model Cafe {
@@ -57,17 +88,22 @@ model Cafe {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  // ── Konfigurasi pembayaran per kafe (dua jalur: manual + Midtrans opsional) ──
-  // Metode manual yang diterima kafe ini (subset dari TUNAI, QRIS_STATIS,
-  // TRANSFER, EDC). Default hanya tunai agar kafe baru langsung bisa menagih.
+  // ── Konfigurasi pembayaran per kafe — KOLOM CERMIN, jangan dibaca lagi ──────
+  //
+  // Sumber kebenarannya kini `metode_pembayaran_kafe` & `midtrans_credentials`.
+  // Kolom di bawah TETAP DIPELIHARA `paymentSettings.service` supaya penurunan
+  // versi aplikasi (rollback kode tanpa rollback database) masih menemukan
+  // konfigurasi yang benar. Kode baru TIDAK boleh membacanya — `midtransAktif`
+  // khususnya menyesatkan: ia cuma berarti "pernah ada Server Key", bukan "siap
+  // menerima uang".
+  //
+  // `midtransProduction` adalah MODE AKTIF kafe (sandbox/production) — satu-
+  // satunya kolom lama yang masih ikut menentukan perilaku, dan dibaca lewat
+  // `paymentSettings.service`, bukan langsung.
   metodeDiterima     String[] @default(["TUNAI"]) @map("metode_diterima")
-  // Kredensial Midtrans milik kafe. serverKey DISIMPAN TERENKRIPSI (AES-256-GCM,
-  // lihat lib/enkripsi.ts); clientKey aman terekspos ke frontend (memang publik).
   midtransServerKey  String?  @map("midtrans_server_key")
   midtransClientKey  String?  @map("midtrans_client_key")
-  // Sandbox (false) vs Production (true) — menentukan endpoint Snap/Core API.
   midtransProduction Boolean  @default(false) @map("midtrans_production")
-  // True setelah serverKey diisi — gerbang cepat "boleh buat transaksi Midtrans".
   midtransAktif      Boolean  @default(false) @map("midtrans_aktif")
 
   users                User[]
@@ -77,6 +113,10 @@ model Cafe {
   orders               Order[]
   pushSubscriptions    PushSubscription[]
   dashboardPreferences DashboardPreference[]
+  metodePembayaran     MetodePembayaranKafe[]
+  midtransCredentials  MidtransCredential[]
+  paymentAuditLogs     PaymentAuditLog[]
+  webhookEvents        GatewayWebhookEvent[]
 
   @@map("cafes")
 }
@@ -99,6 +139,11 @@ model User {
 
   cafe                Cafe                 @relation(fields: [cafeId], references: [id], onDelete: Cascade)
   dashboardPreference DashboardPreference?
+  // Pesanan yang ditagih & yang dibatalkan staf ini. `onDelete: SetNull` di sisi
+  // `Order`: menghapus seorang kasir tidak boleh ikut menghapus riwayat
+  // penjualan, tapi jejaknya juga tidak boleh menunjuk baris yang sudah tiada.
+  ordersAsCashier     Order[]              @relation("OrderCashier")
+  ordersCancelled     Order[]              @relation("OrderCancelledBy")
 
   @@index([cafeId])
   @@map("users")
@@ -181,11 +226,58 @@ model MenuItem {
 // ── Pesanan ──────────────────────────────────────────────────────────────────
 
 model Order {
-  id          String      @id @default(uuid()) @db.Uuid
-  cafeId      String      @map("cafe_id") @db.Uuid
-  tableId     String      @map("table_id") @db.Uuid
+  id     String @id @default(uuid()) @db.Uuid
+  cafeId String @map("cafe_id") @db.Uuid
+  /// NULL hanya untuk pesanan bawa pulang: tidak ada meja yang bisa disebut,
+  /// dan menautkannya ke meja mana pun akan membuat meja itu tampak terisi.
+  /// Pesanan makan di tempat WAJIB punya meja — dijaga di service, bukan di
+  /// database, karena aturannya bergantung pada `fulfillment_type`.
+  tableId     String?     @map("table_id") @db.Uuid
   status      OrderStatus @default(MENUNGGU_PEMBAYARAN)
   totalAmount Decimal     @default(0) @map("total_amount") @db.Decimal(12, 2)
+
+  // ── Bentuk pesanan ─────────────────────────────────────────────────────────
+  /// DINE_IN | TAKEAWAY — lihat `lib/orderStatus.ts`.
+  fulfillmentType String @default("DINE_IN") @map("fulfillment_type")
+  /// TABLE_QR | CASHIER — dari mana pesanan ini lahir. Menentukan apakah ia
+  /// perlu dikonfirmasi kasir dan bagaimana ia ditandai di Layar Dapur.
+  orderSource     String @default("TABLE_QR") @map("order_source")
+  /// Nama tamu, bila kasir sempat menanyakannya. Tidak pernah wajib.
+  customerName    String? @map("customer_name")
+  /// Catatan untuk SELURUH pesanan (mis. "pisahkan piringnya"). Catatan per
+  /// item tetap di `order_items.notes`.
+  catatan         String?
+
+  // ── Perjalanan di dapur ────────────────────────────────────────────────────
+  /// NOT_SENT | QUEUED | PREPARING | READY | COMPLETED.
+  ///
+  /// TEKS, sealasan `status_pembayaran`: menambah tahap baru tidak boleh
+  /// menuntut migrasi tipe yang mengunci tabel pesanan. Status per-item
+  /// (`order_items.kitchen_status`) tetap ada dan dipelihara bersamaan —
+  /// yang di sini mengikuti tiketnya, yang di sana mengikuti barisnya.
+  kitchenStatus    String    @default("NOT_SENT") @map("kitchen_status")
+  kitchenQueuedAt  DateTime? @map("kitchen_queued_at")
+  kitchenStartedAt DateTime? @map("kitchen_started_at")
+  kitchenReadyAt   DateTime? @map("kitchen_ready_at")
+  completedAt      DateTime? @map("completed_at")
+
+  // ── Jejak keputusan kasir ──────────────────────────────────────────────────
+  /// Kasir/pemilik yang membuat pesanan ini di layar kasir (jalur POS).
+  cashierUserId    String?   @map("cashier_user_id") @db.Uuid
+  confirmedAt      DateTime? @map("confirmed_at")
+  cancelledAt      DateTime? @map("cancelled_at")
+  cancelledBy      String?   @map("cancelled_by") @db.Uuid
+  /// Wajib terisi saat dibatalkan — pembatalan tanpa alasan tidak bisa
+  /// dipertanggungjawabkan besok.
+  alasanPembatalan String?   @map("alasan_pembatalan")
+
+  /// Kunci anti-kirim-ganda untuk pesanan yang dibuat di layar kasir.
+  ///
+  /// Kasir menekan "Bayar & Kirim ke Dapur" dua kali (atau jaringannya lambat
+  /// lalu ia mengulang) tidak boleh melahirkan dua tagihan. Unique constraint
+  /// parsial `(cafe_id, idempotency_key)` yang menjadi penengahnya — yang kedua
+  /// kalah di database, bukan di logika aplikasi yang bisa balapan.
+  idempotencyKey String? @map("idempotency_key")
 
   // Ringkasan pembayaran yang disalin dari baris `payments` saat pesanan
   // dirilis ke dapur. Sumber kebenaran tetap tabel `payments`; salinan di sini
@@ -196,25 +288,42 @@ model Order {
 
   // ── Integrasi pembayaran dua jalur ─────────────────────────────────────────
   // Diisi jalur Midtrans: `order_id` yang dikirim ke Snap + token transaksinya.
-  midtransOrderId  String?  @map("midtrans_order_id")
-  snapToken        String?  @map("snap_token")
+  midtransOrderId   String?  @map("midtrans_order_id")
+  snapToken         String?  @map("snap_token")
   // Diisi jalur DOKU Checkout: `invoice_number` yang dikirim ke DOKU. Jadi kunci
   // pencocokan saat notifikasi (webhook) datang, sebagaimana `midtransOrderId`.
-  dokuInvoiceNumber String? @map("doku_invoice_number")
-  // Status pembayaran versi domain baru (string, lintas jalur manual & Midtrans):
-  // MENUNGGU | LUNAS | GAGAL. Melengkapi `payment.status` (enum jalur lama).
-  statusPembayaran String?  @default("MENUNGGU") @map("status_pembayaran")
+  dokuInvoiceNumber String?  @map("doku_invoice_number")
+  // Status pembayaran domain (TEKS, lintas jalur manual & gateway). Kosakata
+  // kanoniknya ada di `lib/paymentStatus.ts`: UNPAID | AWAITING_VERIFICATION |
+  // PAID | FAILED | EXPIRED | CANCELLED | REFUNDED | PARTIALLY_REFUNDED.
+  //
+  // Sengaja TEKS, bukan enum PostgreSQL: menambah status baru tidak boleh
+  // menuntut migrasi tipe yang mengunci tabel pesanan. Baris lama berkosakata
+  // Indonesia (MENUNGGU/LUNAS/GAGAL) dipetakan migrasi
+  // `20260830000000_pengaturan_pembayaran`, dan `normalisasiStatus()` tetap
+  // menerimanya agar klien lama tidak patah.
+  //
+  // BUKAN status pesanan/dapur — itu `status` (OrderStatus) di atas.
+  statusPembayaran  String?  @default("UNPAID") @map("status_pembayaran")
   // Metode aktual yang menuntaskan pembayaran — kode manual (TUNAI/QRIS_STATIS/
   // TRANSFER/EDC) atau label Midtrans (QRIS/GoPay/BCA Virtual Account/…).
-  metodePembayaran String?  @map("metode_pembayaran")
+  metodePembayaran  String?  @map("metode_pembayaran")
   // Nominal yang disepakati saat lunas (tagihan yang dibayar).
-  nominalDibayar   Decimal? @map("nominal_dibayar") @db.Decimal(12, 2)
+  nominalDibayar    Decimal? @map("nominal_dibayar") @db.Decimal(12, 2)
+
+  // Nomor antrian yang dipanggil ke tamu, ditampilkan sebagai `A-001`.
+  // Berurutan per kafe DAN per hari: pesanan pertama hari itu selalu 1, lalu
+  // naik sampai 999 sebelum berputar kembali ke 1. Null hanya pada pesanan
+  // lama yang dibuat sebelum kolom ini ada.
+  queueNumber Int? @map("queue_number")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   cafe              Cafe               @relation(fields: [cafeId], references: [id], onDelete: Cascade)
-  table             Table              @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  table             Table?             @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  cashier           User?              @relation("OrderCashier", fields: [cashierUserId], references: [id], onDelete: SetNull)
+  pembatal          User?              @relation("OrderCancelledBy", fields: [cancelledBy], references: [id], onDelete: SetNull)
   items             OrderItem[]
   payment           Payment?
   pembayaranManual  PembayaranManual?
@@ -226,10 +335,23 @@ model Order {
   @@index([createdAt])
   // Laporan omzet menyaring berdasarkan kapan pesanan DIBAYAR.
   @@index([cafeId, paidAt])
+  // Layar kasir: tab "Perlu Konfirmasi"/"Sudah Dibayar" menyaring status bayar.
+  // Pengurutan per waktu sudah tertutup index `[cafeId, createdAt, queueNumber]`
+  // di bawah — PostgreSQL memakai awalannya, jadi tidak perlu index kembar.
+  @@index([cafeId, statusPembayaran])
+  // Layar Dapur & tab "Sedang Diproses" menyaring tahap dapur.
+  @@index([cafeId, kitchenStatus])
+  // Filter "QR Meja / Kasir" di header layar kasir.
+  @@index([cafeId, orderSource])
+  // Anti-kirim-ganda pesanan kasir. NULL dianggap berbeda satu sama lain oleh
+  // PostgreSQL, jadi pesanan dari QR (yang tidak punya kunci) tidak terganggu.
+  @@unique([cafeId, idempotencyKey])
   // Pencarian pesanan dari webhook / polling Midtrans lewat order_id gateway.
   @@index([midtransOrderId])
   // Pencarian pesanan dari webhook DOKU lewat invoice_number.
   @@index([dokuInvoiceNumber])
+  // Mencari nomor antrian tertinggi milik kafe ini pada hari berjalan.
+  @@index([cafeId, createdAt, queueNumber])
   @@map("orders")
 }
 
@@ -275,21 +397,214 @@ model Payment {
   @@map("payments")
 }
 
-/// Bukti pembayaran manual yang dikonfirmasi kasir (tunai / QRIS statis /
-/// transfer / EDC). Melengkapi jalur Midtrans; satu baris per pesanan.
+/// Satu pembayaran manual (tunai / QRIS statis / transfer / EDC) beserta jejak
+/// verifikasinya. Melengkapi jalur Midtrans; satu baris per pesanan.
+///
+/// Barisnya bisa lahir dari DUA arah:
+///   - Pelanggan memilih metode manual di checkout -> `sumber = CHECKOUT`,
+///     `statusVerifikasi = MENUNGGU`. Uang BELUM diterima; pesanan berstatus
+///     bayar `AWAITING_VERIFICATION` sampai kasir memutuskan.
+///   - Kasir menagih langsung di layar kasir -> `sumber = KASIR` dan langsung
+///     `DITERIMA` (kasirnya sendiri yang memegang uangnya).
+///
+/// Yang membuat baris ini bukan sekadar catatan: setiap keputusan menyimpan
+/// SIAPA yang memutuskan dan KAPAN, sehingga selisih kas punya jejak yang bisa
+/// ditelusuri. Alasan penolakan wajib ada agar tamu bisa diberi tahu kenapa.
 model PembayaranManual {
   id           String   @id @default(cuid())
   orderId      String   @unique @map("order_id") @db.Uuid
   // Kode metode manual: TUNAI, QRIS_STATIS, TRANSFER, EDC.
   metode       String
-  // Nominal yang diterima kasir (untuk tunai bisa > total → menghitung kembalian).
+  // Nominal yang diterima kasir (untuk tunai bisa > total -> menghitung kembalian).
   nominal      Decimal  @db.Decimal(12, 2)
   catatanKasir String?  @map("catatan_kasir")
   createdAt    DateTime @default(now()) @map("created_at")
 
+  // -- Alur verifikasi --------------------------------------------------------
+  /// Dari mana permintaan pembayaran ini datang.
+  sumber           KanalPembayaran  @default(KASIR)
+  statusVerifikasi StatusVerifikasi @default(DITERIMA) @map("status_verifikasi")
+  /// Kasir/pemilik yang menerima atau menolak. Null pada permintaan yang masih
+  /// menunggu, dan pada baris lama sebelum kolom ini ada.
+  diverifikasiOleh String?          @map("diverifikasi_oleh") @db.Uuid
+  diverifikasiPada DateTime?        @map("diverifikasi_pada")
+  /// Wajib terisi saat DITOLAK - tamu berhak tahu alasannya.
+  alasanPenolakan  String?          @map("alasan_penolakan")
+  /// Nomor referensi/approval (transfer, EDC) yang dicatat kasir.
+  referensi        String?
+  /// Bukti pembayaran yang diunggah (Cloudinary, folder per kafe).
+  buktiUrl         String?          @map("bukti_url")
+  buktiPublicId    String?          @map("bukti_public_id")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
+  // Antrean "perlu diverifikasi" di layar kasir menyaring kolom ini.
+  @@index([statusVerifikasi])
   @@map("pembayaran_manual")
+}
+
+// -- Pengaturan pembayaran per kafe -------------------------------------------
+
+/// Konfigurasi SATU metode pembayaran manual milik sebuah kafe.
+///
+/// Menggantikan array `cafes.metode_diterima` yang hanya bisa menyimpan "aktif
+/// atau tidak": sebuah metode sekarang punya kanal (kasir/checkout), kewajiban
+/// verifikasi, dan rinciannya sendiri (gambar QRIS, nomor rekening, terminal
+/// EDC). Kolom lama tetap dipelihara sebagai cermin - lihat komentarnya di
+/// model `Cafe`.
+///
+/// Rincian rekening & QRIS adalah data tenant: tidak pernah keluar dari
+/// endpoint mana pun tanpa `cafeId` dari token.
+model MetodePembayaranKafe {
+  id     String @id @default(uuid()) @db.Uuid
+  cafeId String @map("cafe_id") @db.Uuid
+  /// Kode metode: TUNAI | QRIS_STATIS | TRANSFER | EDC.
+  metode String
+
+  aktif                Boolean @default(false)
+  /// Muncul di layar kasir (POS).
+  tersediaDiKasir      Boolean @default(true) @map("tersedia_di_kasir")
+  /// Muncul di checkout mandiri pelanggan. EDC & Tunai selalu false -
+  /// keduanya menuntut kehadiran kasir.
+  tersediaDiCheckout   Boolean @default(false) @map("tersedia_di_checkout")
+  /// Pembayaran lewat metode ini harus dikonfirmasi kasir sebelum dianggap
+  /// lunas. Dipaksa true untuk metode yang tampil di checkout.
+  wajibVerifikasiKasir Boolean @default(true) @map("wajib_verifikasi_kasir")
+
+  /// Instruksi bebas yang ditampilkan ke pelanggan/kasir.
+  instruksi       String?
+  /// Batas waktu pembayaran dalam menit (transfer bank). Null = tanpa batas.
+  batasWaktuMenit Int?    @map("batas_waktu_menit")
+
+  // -- QRIS statis --
+  qrisImageUrl      String? @map("qris_image_url")
+  qrisImagePublicId String? @map("qris_image_public_id")
+  qrisMerchantName  String? @map("qris_merchant_name")
+  qrisNmid          String? @map("qris_nmid")
+
+  // -- Transfer bank --
+  bankNama          String? @map("bank_nama")
+  bankNomorRekening String? @map("bank_nomor_rekening")
+  bankAtasNama      String? @map("bank_atas_nama")
+
+  // -- EDC --
+  edcProvider      String? @map("edc_provider")
+  edcTerminalLabel String? @map("edc_terminal_label")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cafe Cafe @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+
+  @@unique([cafeId, metode])
+  @@index([cafeId])
+  @@map("metode_pembayaran_kafe")
+}
+
+/// Kredensial Midtrans milik sebuah kafe, SATU BARIS PER MODE.
+///
+/// Memisahkan Sandbox dari Production adalah inti model ini: dengan satu slot
+/// bersama (skema lama), menyalakan Production tanpa mengganti kunci berarti
+/// transaksi uang sungguhan dikirim memakai kunci uji coba. Di sini kunci
+/// Production hanya ada bila memang pernah diisi - tidak ada jalan mundur ke
+/// kunci Sandbox.
+///
+/// `serverKeyEnc` disimpan TERENKRIPSI (AES-256-GCM, `lib/enkripsi.ts`, kunci
+/// dari `ENCRYPTION_KEY` di environment) dan TIDAK PERNAH dikembalikan ke klien
+/// dalam bentuk apa pun. `clientKey` memang publik (dipakai Snap.js di
+/// browser), jadi aman diekspos - tetap hanya ke kafe pemiliknya.
+model MidtransCredential {
+  id     String       @id @default(uuid()) @db.Uuid
+  cafeId String       @map("cafe_id") @db.Uuid
+  mode   MidtransMode
+
+  clientKey     String? @map("client_key")
+  serverKeyEnc  String? @map("server_key_enc")
+  /// 4 karakter terakhir Server Key - supaya pemilik bisa memastikan kunci
+  /// mana yang tersimpan tanpa kuncinya pernah dikirim balik.
+  serverKeyHint String? @map("server_key_hint")
+
+  /// BELUM_DIUJI | BERHASIL | GAGAL - hasil tombol "Tes Koneksi".
+  statusKoneksi    String    @default("BELUM_DIUJI") @map("status_koneksi")
+  koneksiDiperiksa DateTime? @map("koneksi_diperiksa")
+  /// Pesan ringkas hasil tes (mis. "401 Unauthorized"). TIDAK PERNAH memuat kunci.
+  koneksiPesan     String?   @map("koneksi_pesan")
+
+  /// BELUM_DIPERIKSA | TERVERIFIKASI | GAGAL - apakah notifikasi Midtrans
+  /// pernah benar-benar masuk dengan signature yang cocok pada mode ini.
+  statusWebhook    String    @default("BELUM_DIPERIKSA") @map("status_webhook")
+  webhookDiperiksa DateTime? @map("webhook_diperiksa")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cafe Cafe @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+
+  @@unique([cafeId, mode])
+  @@index([cafeId])
+  @@map("midtrans_credentials")
+}
+
+/// Jejak audit perubahan & keputusan pembayaran.
+///
+/// ATURAN KERAS: tidak ada rahasia yang boleh masuk ke sini. `nilaiLama`/
+/// `nilaiBaru` hanya menerima nilai yang aman dibaca ulang (nama metode, mode,
+/// status) - Server Key, ciphertext-nya, dan nomor rekening lengkap tidak
+/// pernah ikut. Penyaringnya ada di `lib/auditRedaksi.ts`.
+model PaymentAuditLog {
+  id          String  @id @default(uuid()) @db.Uuid
+  cafeId      String  @map("cafe_id") @db.Uuid
+  /// Pelaku. Null untuk tindakan sistem (webhook gateway).
+  actorUserId String? @map("actor_user_id") @db.Uuid
+  actorRole   String? @map("actor_role")
+  /// Kode aksi, mis. `metode.diperbarui`, `midtrans.kredensial.disimpan`,
+  /// `pembayaran.manual.ditolak`.
+  aksi        String
+  /// Pesanan terkait, bila aksinya menyangkut satu pesanan.
+  orderId     String? @map("order_id") @db.Uuid
+  nilaiLama   Json?   @map("nilai_lama")
+  nilaiBaru   Json?   @map("nilai_baru")
+  ip          String?
+  userAgent   String? @map("user_agent")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  cafe Cafe @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+
+  @@index([cafeId, createdAt])
+  @@index([orderId])
+  @@map("payment_audit_logs")
+}
+
+/// Notifikasi gateway yang SUDAH diproses - kunci idempotensi webhook.
+///
+/// Midtrans mengirim ulang notifikasi yang sama sampai menerima 200, dan bisa
+/// mengirim beberapa sekaligus. Tanpa tabel ini, dua notifikasi kembar yang
+/// tiba bersamaan sama-sama lolos pemeriksaan "sudah lunas belum" lalu
+/// sama-sama menulis - menerbitkan tiket dapur ganda. Unique constraint di
+/// `(gateway, event_key)` yang menjadi penengahnya: yang kedua kalah di
+/// database, bukan di logika aplikasi yang bisa balapan.
+model GatewayWebhookEvent {
+  id       String @id @default(uuid()) @db.Uuid
+  cafeId   String @map("cafe_id") @db.Uuid
+  /// `midtrans` | `doku`.
+  gateway  String
+  /// Identitas unik satu notifikasi: `<order_id>:<transaction_status>:<status_code>`.
+  eventKey String @map("event_key")
+
+  orderId           String?  @map("order_id") @db.Uuid
+  transactionStatus String?  @map("transaction_status")
+  /// Nominal yang diklaim notifikasi - disimpan untuk penelusuran selisih.
+  grossAmount       Decimal? @map("gross_amount") @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  cafe Cafe @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+
+  @@unique([gateway, eventKey])
+  @@index([cafeId, createdAt])
+  @@map("gateway_webhook_events")
 }
 
 // ── Preferensi tampilan dasbor ───────────────────────────────────────────────

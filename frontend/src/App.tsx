@@ -7,6 +7,7 @@ import {
   isScrollLocked,
 } from './hooks/useBodyScrollLock';
 import { CartProvider } from './cart/CartContext';
+import { PesananAktifProvider } from './order/PesananAktifContext';
 import { AuthProvider } from './auth/AuthContext';
 import { TableSessionProvider } from './table/TableSessionContext';
 import ProtectedRoute from './auth/ProtectedRoute';
@@ -39,6 +40,10 @@ function CustomerRoute({ children }: { children: React.ReactNode }) {
  * URL yang memang dienkode server ke stiker meja (lihat `backend/src/lib/
  * qrUrl.ts`), sehingga tokennya bisa langsung diterjemahkan lewat
  * `GET /api/tables/by-qr/:qrCode`.
+ *
+ * Pesanan yang belum dibayar juga global (PesananAktifProvider): halaman menu
+ * dan keranjang perlu tahu bahwa ada tagihan berjalan, agar tamu punya jalan
+ * kembali ke halaman statusnya dan tambahannya masuk ke pesanan yang sama.
  *
  * Keranjang bersifat global (CartProvider) sehingga item tetap tersimpan saat
  * berpindah antar halaman.
@@ -88,125 +93,127 @@ export default function App() {
   return (
     <AuthProvider>
       <CartProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Navigate to="/menu" replace />} />
+        <PesananAktifProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Navigate to="/menu" replace />} />
 
-            {/* Pelanggan (tanpa login — akses lewat QR meja) */}
-            <Route
-              path="/menu"
-              element={
-                <CustomerRoute>
-                  <MenuPage />
-                </CustomerRoute>
-              }
-            />
-            <Route
-              path="/menu/:qrCode"
-              element={
-                <CustomerRoute>
-                  <MenuPage />
-                </CustomerRoute>
-              }
-            />
-            <Route
-              path="/keranjang"
-              element={
-                <CustomerRoute>
-                  <CartPage />
-                </CustomerRoute>
-              }
-            />
-            <Route
-              path="/checkout"
-              element={
-                <CustomerRoute>
-                  <CheckoutPage />
-                </CustomerRoute>
-              }
-            />
-            {/* Status pesanan & pembayaran — tujuan callback Snap dan jalur kasir */}
-            <Route
-              path="/pesanan/:orderId"
-              element={
-                <CustomerRoute>
-                  <PesananStatusPage />
-                </CustomerRoute>
-              }
-            />
+              {/* Pelanggan (tanpa login — akses lewat QR meja) */}
+              <Route
+                path="/menu"
+                element={
+                  <CustomerRoute>
+                    <MenuPage />
+                  </CustomerRoute>
+                }
+              />
+              <Route
+                path="/menu/:qrCode"
+                element={
+                  <CustomerRoute>
+                    <MenuPage />
+                  </CustomerRoute>
+                }
+              />
+              <Route
+                path="/keranjang"
+                element={
+                  <CustomerRoute>
+                    <CartPage />
+                  </CustomerRoute>
+                }
+              />
+              <Route
+                path="/checkout"
+                element={
+                  <CustomerRoute>
+                    <CheckoutPage />
+                  </CustomerRoute>
+                }
+              />
+              {/* Status pesanan & pembayaran — tujuan callback Snap dan jalur kasir */}
+              <Route
+                path="/pesanan/:orderId"
+                element={
+                  <CustomerRoute>
+                    <PesananStatusPage />
+                  </CustomerRoute>
+                }
+              />
 
-            {/* Staf & pemilik — dilindungi sesuai peran */}
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/daftar" element={<RegisterPage />} />
+              {/* Staf & pemilik — dilindungi sesuai peran */}
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/daftar" element={<RegisterPage />} />
 
-            <Route
-              path="/dapur"
-              element={
-                <ProtectedRoute allow={['DAPUR', 'OWNER']}>
-                  <KitchenDisplayPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dasbor"
-              element={
-                <ProtectedRoute allow={['OWNER']}>
-                  <DashboardPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dasbor/menu"
-              element={
-                <ProtectedRoute allow={['OWNER']}>
-                  <CafeMenuPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dasbor/manajemen-menu"
-              element={
-                <ProtectedRoute allow={['OWNER']}>
-                  <MenuManagementPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dasbor/meja"
-              element={
-                <ProtectedRoute allow={['OWNER']}>
-                  <TableManagementPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/kasir"
-              element={
-                <ProtectedRoute allow={['KASIR', 'OWNER']}>
-                  <CashierPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dasbor/pembayaran"
-              element={
-                <ProtectedRoute allow={['OWNER']}>
-                  <PaymentSettingsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/pembayaran/:midtransOrderId"
-              element={
-                <ProtectedRoute allow={['KASIR', 'OWNER']}>
-                  <PembayaranStatusPage />
-                </ProtectedRoute>
-              }
-            />
+              <Route
+                path="/dapur"
+                element={
+                  <ProtectedRoute allow={['DAPUR', 'OWNER']}>
+                    <KitchenDisplayPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dasbor"
+                element={
+                  <ProtectedRoute allow={['OWNER']}>
+                    <DashboardPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dasbor/menu"
+                element={
+                  <ProtectedRoute allow={['OWNER']}>
+                    <CafeMenuPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dasbor/manajemen-menu"
+                element={
+                  <ProtectedRoute allow={['OWNER']}>
+                    <MenuManagementPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dasbor/meja"
+                element={
+                  <ProtectedRoute allow={['OWNER']}>
+                    <TableManagementPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/kasir"
+                element={
+                  <ProtectedRoute allow={['KASIR', 'OWNER']}>
+                    <CashierPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dasbor/pembayaran"
+                element={
+                  <ProtectedRoute allow={['OWNER']}>
+                    <PaymentSettingsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/pembayaran/:midtransOrderId"
+                element={
+                  <ProtectedRoute allow={['KASIR', 'OWNER']}>
+                    <PembayaranStatusPage />
+                  </ProtectedRoute>
+                }
+              />
 
-            <Route path="*" element={<Navigate to="/menu" replace />} />
-          </Routes>
-        </BrowserRouter>
+              <Route path="*" element={<Navigate to="/menu" replace />} />
+            </Routes>
+          </BrowserRouter>
+        </PesananAktifProvider>
       </CartProvider>
     </AuthProvider>
   );

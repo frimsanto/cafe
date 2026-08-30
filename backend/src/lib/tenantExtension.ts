@@ -9,6 +9,10 @@ const TENANT_MODELS = new Set([
   'Order',
   'DashboardPreference',
   'PushSubscription',
+  'MetodePembayaranKafe',
+  'MidtransCredential',
+  'PaymentAuditLog',
+  'GatewayWebhookEvent',
 ]);
 
 /**

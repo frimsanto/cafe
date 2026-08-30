@@ -1,4 +1,5 @@
 import type { ReceiptOrder } from '../lib/receiptPdf';
+import { normalisasiFulfillment } from '../lib/orderStatus';
 
 // Data struk siap-cetak dalam bentuk JSON — dipakai pratinjau & cetak di
 // peramban kasir (kertas 80mm). Berbeda dari endpoint struk PDF yang mengirim
@@ -16,7 +17,12 @@ export interface ReceiptDataDTO {
   cafe: { id: string; name: string; address: string | null };
   order: {
     id: string;
-    tableName: string;
+    /** NULL pada pesanan bawa pulang — klien menampilkan nomor antriannya. */
+    tableName: string | null;
+    /** Nomor antrian harian (1-999); null pada pesanan lama. */
+    queueNumber: number | null;
+    /** DINE_IN | TAKEAWAY. */
+    fulfillmentType: string;
     createdAt: string;
     totalAmount: number;
   };
@@ -42,7 +48,9 @@ export function toReceiptDataDTO(order: ReceiptOrder): ReceiptDataDTO {
     },
     order: {
       id: order.id,
-      tableName: order.table.tableName,
+      tableName: order.table?.tableName ?? null,
+      queueNumber: order.queueNumber,
+      fulfillmentType: normalisasiFulfillment(order.fulfillmentType),
       createdAt: order.createdAt.toISOString(),
       totalAmount: Number(order.totalAmount),
     },

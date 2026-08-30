@@ -1,24 +1,53 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { KitchenStatus } from '../types/order';
+import type { KitchenStage, KitchenStatus } from '../types/order';
 import type { OrderWithTableDTO } from '../types/api';
 import { useAuth } from '../auth/AuthContext';
 import { ROLE_LABEL } from '../types/auth';
 import { kitchenApi } from '../api/orders';
 import { describeApiError } from '../lib/apiClient';
 import { subscribeRealtime } from '../lib/realtime';
+import { samakanUrutanItem } from '../lib/orderItems';
+import { labelTujuan, tahapDapur } from '../lib/orderStatus';
 import { playChime, playReadyChime } from '../lib/sound';
 import KitchenOrderCard from '../components/kds/KitchenOrderCard';
 import ReadyToastContainer, {
   type ReadyToastData,
 } from '../components/kds/ReadyToast';
 
+/** Tahap yang masih menjadi urusan dapur — cerminan filter di server. */
+const TAHAP_TAMPIL: KitchenStage[] = ['QUEUED', 'PREPARING', 'READY'];
+
 const READY_TOAST_MS = 6000; // durasi toast "pesanan siap"
 const HIGHLIGHT_MS = 6000; // durasi sorotan "BARU"
 
-/** True bila seluruh item pesanan sudah berstatus READY. */
-function isAllReady(order: { items: { kitchenStatus: KitchenStatus }[] }): boolean {
-  return order.items.length > 0 && order.items.every((i) => i.kitchenStatus === 'READY');
+/** True bila tiketnya sudah sampai tahap "siap disajikan" (atau lewat). */
+function isAllReady(order: OrderWithTableDTO): boolean {
+  const tahap = tahapDapur(order);
+  return tahap === 'READY' || tahap === 'COMPLETED';
+}
+
+/**
+ * Tiket yang menyusul ke meja yang sudah punya pesanan lain di layar ini.
+ *
+ * Dihitung dari daftar yang sedang tampil, bukan dari kolom server: "tambahan"
+ * memang hanya berarti sesuatu relatif terhadap tiket lain yang masih hidup,
+ * dan begitu tiket pertama diserahkan, tiket kedua bukan tambahan siapa pun
+ * lagi. Pesanan bawa pulang tidak pernah dihitung — tidak ada meja yang sedang
+ * dilayani di sana.
+ */
+function tandaiTambahan(orders: OrderWithTableDTO[]): Set<string> {
+  const pertama = new Map<string, string>();
+  const tambahan = new Set<string>();
+  const urut = [...orders].sort(
+    (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+  );
+  for (const order of urut) {
+    if (!order.tableId) continue;
+    if (pertama.has(order.tableId)) tambahan.add(order.id);
+    else pertama.set(order.tableId, order.id);
+  }
+  return tambahan;
 }
 
 /**
@@ -86,7 +115,11 @@ export default function KitchenDisplayPage() {
     (order: OrderWithTableDTO) => {
       if (notifiedRef.current.has(order.id)) return;
       notifiedRef.current.add(order.id);
-      setReadyToasts((prev) => [...prev, { id: order.id, tableName: order.tableName }]);
+      setReadyToasts((prev) => [
+        ...prev,
+        // Bawa pulang tidak punya meja; yang dipanggil adalah nomor antriannya.
+        { id: order.id, tableName: labelTujuan(order) },
+      ]);
       if (!mutedRef.current) playReadyChime();
       setTimeout(() => dismissToast(order.id), READY_TOAST_MS);
     },
@@ -132,15 +165,33 @@ export default function KitchenDisplayPage() {
           break;
 
         case 'kitchen.order.updated':
-          setOrders((prev) =>
-            prev.map((o) => (o.id === order.id ? order : o)),
-          );
+          setOrders((prev) => {
+            // Tiket yang sudah diserahkan kasir atau dibatalkan keluar dari
+            // layar — dapur tidak punya urusan lagi dengannya.
+            if (!TAHAP_TAMPIL.includes(tahapDapur(order))) {
+              return prev.filter((o) => o.id !== order.id);
+            }
+            return prev.map((o) =>
+              o.id === order.id
+                ? { ...order, items: samakanUrutanItem(o.items, order.items) }
+                : o,
+            );
+          });
           break;
 
         case 'order.ready':
-          // Backend menandainya SELESAI — tiketnya keluar dari layar.
+          // Makanannya matang, TAPI tiketnya tetap di layar: yang mengeluarkan
+          // sebuah tiket adalah kasir yang menekan "Diserahkan", bukan chef
+          // yang menekan "Siap". Sebelum perbaikan ini, pesanan yang sudah
+          // matang lenyap dari layar sebelum ada yang mengantarnya.
           announceReady(order);
-          setOrders((prev) => prev.filter((o) => o.id !== order.id));
+          setOrders((prev) =>
+            prev.map((o) =>
+              o.id === order.id
+                ? { ...order, items: samakanUrutanItem(o.items, order.items) }
+                : o,
+            ),
+          );
           break;
       }
     });
@@ -171,12 +222,18 @@ export default function KitchenDisplayPage() {
 
     try {
       const updated = await kitchenApi.updateItemStatus(cafeId, itemId, status);
-      if (isAllReady(updated)) {
-        announceReady(updated);
-        setOrders((prev) => prev.filter((o) => o.id !== updated.id));
-      } else {
-        setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
-      }
+      if (isAllReady(updated)) announceReady(updated);
+      // Pesanan versi server dipakai apa adanya — hanya URUTAN itemnya yang
+      // diselaraskan dengan yang sedang tampil, supaya baris yang baru
+      // disentuh chef tidak melompat ke posisi lain. Tiketnya TETAP di layar
+      // sampai kasir menandainya diserahkan.
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === updated.id
+            ? { ...updated, items: samakanUrutanItem(o.items, updated.items) }
+            : o,
+        ),
+      );
       setError(null);
     } catch (err) {
       // Gagal — kembalikan ke keadaan server agar layar tidak berbohong.
@@ -184,6 +241,37 @@ export default function KitchenDisplayPage() {
       void load();
     }
   };
+
+  /**
+   * Gerakkan SELURUH tiket sekaligus.
+   *
+   * Tidak optimistik, berbeda dari tombol per item: satu ketukan di sini
+   * mengubah setiap baris tiket, dan menebak hasilnya lalu salah berarti chef
+   * melihat seluruh tiket melompat lalu mundur lagi. Balasan server yang
+   * dipakai apa adanya.
+   */
+  const handleStageChange = async (
+    orderId: string,
+    status: 'PREPARING' | 'READY',
+  ) => {
+    try {
+      const updated = await kitchenApi.updateOrderStage(cafeId, orderId, status);
+      if (isAllReady(updated)) announceReady(updated);
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === updated.id
+            ? { ...updated, items: samakanUrutanItem(o.items, updated.items) }
+            : o,
+        ),
+      );
+      setError(null);
+    } catch (err) {
+      setError(describeApiError(err, 'Status tiket gagal disimpan.'));
+      void load();
+    }
+  };
+
+  const idTambahan = tandaiTambahan(orders);
 
   const clock = new Date(now).toLocaleTimeString('id-ID', {
     hour: '2-digit',
@@ -318,9 +406,11 @@ export default function KitchenDisplayPage() {
                 order={order}
                 now={now}
                 isNew={newIds.has(order.id)}
+                isTambahan={idTambahan.has(order.id)}
                 onItemStatusChange={(itemId, status) =>
                   void handleItemStatusChange(order.id, itemId, status)
                 }
+                onStageChange={(status) => void handleStageChange(order.id, status)}
               />
             ))}
           </div>

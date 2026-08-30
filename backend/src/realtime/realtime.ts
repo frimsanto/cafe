@@ -7,21 +7,33 @@ import type { OrderDTO, OrderWithTableDTO } from '../dto/order.dto';
 // (`cafeId`) sehingga pesan hanya sampai ke tenant yang tepat.
 //
 // Protokol pesan (JSON):
-//   Client → server: { "type": "subscribe", "cafeId": "<id>" }
+//   Client → server: { "type": "subscribe", "cafeId": "<id>", "orderId"?: "<id>" }
 //   Server → client: { "type": "<event>", "data": <payload> }
-// Berlangganan juga bisa lewat query saat connect: ws://host/ws?cafeId=<id>
+// Berlangganan juga bisa lewat query saat connect:
+//   ws://host/ws?cafeId=<id>[&orderId=<id>]
+//
+// `orderId` MEMPERSEMPIT langganan: klien yang menyebutkannya hanya menerima
+// event pesanan itu. Ini dipakai HP pelanggan — kanal kafe tidak berautentikasi,
+// jadi tanpa penyempitan ini tiap ponsel tamu akan ikut menerima rincian
+// pesanan meja lain (dan angka omzet dasbor). Layar staf (KDS, kasir, dasbor)
+// berlangganan tanpa `orderId` dan tetap menerima seluruh aliran kafe.
 
-type WsData = { cafeId: string | null; isAlive: boolean };
+type WsData = { cafeId: string | null; orderId: string | null; isAlive: boolean };
 
 const HEARTBEAT_MS = 30_000;
 
-function parseCafeId(req: IncomingMessage): string | null {
+/** Ambil nilai query yang tidak kosong; null bila tidak ada. */
+function bacaParam(url: URL, nama: string): string | null {
+  const nilai = url.searchParams.get(nama);
+  return nilai && nilai.trim() !== '' ? nilai.trim() : null;
+}
+
+function parseLangganan(req: IncomingMessage): { cafeId: string | null; orderId: string | null } {
   try {
     const url = new URL(req.url ?? '', 'http://localhost');
-    const cafeId = url.searchParams.get('cafeId');
-    return cafeId && cafeId.trim() !== '' ? cafeId.trim() : null;
+    return { cafeId: bacaParam(url, 'cafeId'), orderId: bacaParam(url, 'orderId') };
   } catch {
-    return null;
+    return { cafeId: null, orderId: null };
   }
 }
 
@@ -37,7 +49,8 @@ class Realtime {
     this.wss = wss;
 
     wss.on('connection', (ws, req) => {
-      this.meta.set(ws, { cafeId: parseCafeId(req), isAlive: true });
+      const awal = parseLangganan(req);
+      this.meta.set(ws, { ...awal, isAlive: true });
 
       ws.on('pong', () => {
         const m = this.meta.get(ws);
@@ -46,11 +59,27 @@ class Realtime {
 
       ws.on('message', (raw) => {
         try {
-          const msg = JSON.parse(raw.toString()) as { type?: string; cafeId?: string };
+          const msg = JSON.parse(raw.toString()) as {
+            type?: string;
+            cafeId?: string;
+            orderId?: string;
+          };
           if (msg.type === 'subscribe' && typeof msg.cafeId === 'string') {
             const m = this.meta.get(ws);
-            if (m) m.cafeId = msg.cafeId.trim() || null;
-            ws.send(JSON.stringify({ type: 'subscribed', cafeId: msg.cafeId }));
+            if (m) {
+              m.cafeId = msg.cafeId.trim() || null;
+              // Langganan yang tidak menyebut `orderId` melebar kembali ke
+              // seluruh kafe — itu yang dipakai layar staf saat menyambung ulang.
+              m.orderId =
+                typeof msg.orderId === 'string' ? msg.orderId.trim() || null : null;
+            }
+            ws.send(
+              JSON.stringify({
+                type: 'subscribed',
+                cafeId: msg.cafeId,
+                orderId: msg.orderId ?? null,
+              }),
+            );
           }
         } catch {
           /* pesan bukan JSON valid — abaikan */
@@ -58,8 +87,14 @@ class Realtime {
       });
 
       // Sapa klien; kirim status langganan awal (dari query, bila ada).
-      const cafeId = this.meta.get(ws)?.cafeId ?? null;
-      ws.send(JSON.stringify({ type: 'connected', cafeId }));
+      const m = this.meta.get(ws);
+      ws.send(
+        JSON.stringify({
+          type: 'connected',
+          cafeId: m?.cafeId ?? null,
+          orderId: m?.orderId ?? null,
+        }),
+      );
     });
 
     // Heartbeat — putuskan koneksi yang sudah mati.
@@ -82,26 +117,33 @@ class Realtime {
     });
   }
 
-  /** Kirim payload ke seluruh klien yang berlangganan sebuah kafe. */
-  broadcastToCafe(cafeId: string, payload: unknown): void {
+  /**
+   * Kirim payload ke klien yang berlangganan sebuah kafe.
+   *
+   * `orderId` menandai pesanan yang diwakili payload ini. Klien yang
+   * mempersempit langganannya ke satu pesanan (HP pelanggan) hanya menerima
+   * payload dengan `orderId` yang sama — event kafe yang tak terkait, termasuk
+   * omzet dasbor dan pesanan meja lain, tidak pernah sampai ke sana.
+   */
+  broadcastToCafe(cafeId: string, payload: unknown, orderId?: string): void {
     if (!this.wss) return;
     const message = JSON.stringify(payload);
     this.wss.clients.forEach((ws) => {
       const m = this.meta.get(ws);
-      if (m?.cafeId === cafeId && ws.readyState === WebSocket.OPEN) {
-        ws.send(message);
-      }
+      if (!m || m.cafeId !== cafeId || ws.readyState !== WebSocket.OPEN) return;
+      if (m.orderId !== null && m.orderId !== orderId) return;
+      ws.send(message);
     });
   }
 
   /** Pesanan baru masuk ke dapur (setelah pembayaran sukses). */
   emitKitchenOrderCreated(cafeId: string, order: OrderWithTableDTO): void {
-    this.broadcastToCafe(cafeId, { type: 'kitchen.order.created', data: order });
+    this.broadcastToCafe(cafeId, { type: 'kitchen.order.created', data: order }, order.id);
   }
 
   /** Pesanan diperbarui (mis. status masak item berubah). */
   emitKitchenOrderUpdated(cafeId: string, order: OrderWithTableDTO): void {
-    this.broadcastToCafe(cafeId, { type: 'kitchen.order.updated', data: order });
+    this.broadcastToCafe(cafeId, { type: 'kitchen.order.updated', data: order }, order.id);
   }
 
   /**
@@ -109,7 +151,7 @@ class Realtime {
    * Klien pelanggan menyaring event ini berdasarkan `data.id` (order miliknya).
    */
   emitOrderReady(cafeId: string, order: OrderDTO): void {
-    this.broadcastToCafe(cafeId, { type: 'order.ready', data: order });
+    this.broadcastToCafe(cafeId, { type: 'order.ready', data: order }, order.id);
   }
 
   /**
@@ -139,7 +181,7 @@ class Realtime {
       metodePembayaran: string | null;
     },
   ): void {
-    this.broadcastToCafe(cafeId, { type: 'payment.status.changed', data });
+    this.broadcastToCafe(cafeId, { type: 'payment.status.changed', data }, data.orderId);
   }
 
   /**
