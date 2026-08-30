@@ -15,6 +15,7 @@ import { uploadRouter } from './upload.routes';
 import { debugRouter } from './debug.routes';
 import { stafRouter } from './staf.routes';
 import { posRouter } from './pos.routes';
+import { shiftRouter } from './shift.routes';
 
 /** Router utama API — semua endpoint domain dipasang di bawah `/api`. */
 export const apiRouter = Router();
@@ -34,4 +35,5 @@ apiRouter.use(dashboardRouter);
 apiRouter.use(uploadRouter);
 apiRouter.use(stafRouter);
 apiRouter.use(posRouter);
+apiRouter.use(shiftRouter);
 apiRouter.use(debugRouter);
