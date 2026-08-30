@@ -19,14 +19,25 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   DAPUR: 'Dapur',
 };
 
-/** Halaman tujuan setelah login, sesuai peran pengguna. */
+/**
+ * Halaman tujuan setelah login, sesuai peran pengguna.
+ *
+ * Setiap peran HARUS dipulangkan ke halaman yang memang boleh dibukanya.
+ * Sebelumnya KASIR ikut dipulangkan ke `/dasbor`, sementara rute itu dijaga
+ * `allow={['OWNER']}` — sehingga setiap kasir yang berhasil masuk langsung
+ * mendarat di halaman 403, dan satu-satunya jalan ke layar kerjanya adalah
+ * mengetik `/kasir` sendiri di bilah alamat.
+ *
+ * Daftar di bawah sengaja MENYEBUT setiap peran secara eksplisit dan tidak
+ * memakai `default`: peran baru yang kelak ditambahkan akan menjadi galat
+ * TypeScript di sini, bukan diam-diam dipulangkan ke halaman milik orang lain.
+ */
+const HALAMAN_UTAMA: Record<UserRole, string> = {
+  OWNER: '/dasbor',
+  KASIR: '/kasir',
+  DAPUR: '/dapur',
+};
+
 export function landingPathFor(role: UserRole): string {
-  switch (role) {
-    case 'DAPUR':
-      return '/dapur';
-    case 'KASIR':
-    case 'OWNER':
-    default:
-      return '/dasbor';
-  }
+  return HALAMAN_UTAMA[role] ?? '/kasir';
 }

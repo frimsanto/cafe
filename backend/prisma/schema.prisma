@@ -106,6 +106,39 @@ model Cafe {
   midtransProduction Boolean  @default(false) @map("midtrans_production")
   midtransAktif      Boolean  @default(false) @map("midtrans_aktif")
 
+  // ── Pengaturan operasional ─────────────────────────────────────────────────
+  //
+  // Sebelum kolom-kolom ini ada, seluruh perhitungan tanggal memakai waktu
+  // LOKAL SERVER (lihat `lib/period.ts` yang lama). Itu diam-diam benar selama
+  // server dan kafe kebetulan berada di zona yang sama, dan diam-diam salah
+  // pada dua hal yang justru paling sering ditanyakan pemilik: omzet "hari ini"
+  // untuk kafe yang tutup pukul 2 pagi, dan shift yang melewati tengah malam.
+
+  /// Zona waktu kafe (IANA, mis. "Asia/Jakarta"). SELURUH laporan, batas hari,
+  /// dan perhitungan jadwal memakai ini — bukan zona waktu server.
+  timezone String @default("Asia/Jakarta")
+
+  /// Menit dari tengah malam tempat HARI OPERASIONAL berganti (0-1439).
+  ///
+  /// Kafe yang tutup pukul 02:00 ingin penjualan pukul 01:30 masuk ke omzet
+  /// "kemarin", karena begitulah kasirnya menutup laci. Nilai 0 = hari
+  /// operasional sama dengan hari kalender.
+  awalHariOperasional Int @default(0) @map("awal_hari_operasional")
+
+  /// Awal minggu untuk laporan mingguan (ISO 1-7; 1 = Senin).
+  awalMinggu Int @default(1) @map("awal_minggu")
+
+  /// Berapa lama foto absensi disimpan sebelum boleh dihapus. Catatan
+  /// kehadirannya sendiri tidak pernah ikut terhapus.
+  retensiFotoHari Int @default(90) @map("retensi_foto_hari")
+
+  /// Apakah kasir boleh melihat riwayat transaksinya di luar shift berjalan.
+  kasirLihatRiwayat Boolean @default(true) @map("kasir_lihat_riwayat")
+
+  /// Pengganti boleh mulai bekerja sambil menunggu persetujuan pemilik.
+  /// False = penggantian harus disetujui LEBIH DULU.
+  penggantiBolehLangsung Boolean @default(true) @map("pengganti_boleh_langsung")
+
   users                User[]
   categories           MenuCategory[]
   menuItems            MenuItem[]
@@ -117,6 +150,14 @@ model Cafe {
   midtransCredentials  MidtransCredential[]
   paymentAuditLogs     PaymentAuditLog[]
   webhookEvents        GatewayWebhookEvent[]
+  shiftTemplates       ShiftTemplate[]
+  shiftSchedules       ShiftSchedule[]
+  cashierDevices       CashierDevice[]
+  attendanceRecords    AttendanceRecord[]
+  attendancePhotos     AttendancePhoto[]
+  cashierShifts        CashierShift[]
+  cashMovements        CashMovement[]
+  shiftReplacements    ShiftReplacement[]
 
   @@map("cafes")
 }
@@ -133,12 +174,48 @@ model User {
   passwordHash String @map("password_hash")
   role         Role   @default(OWNER)
 
+  /// Nomor HP staf — dipakai pemilik untuk menghubungi, bukan untuk login.
+  phone String?
+
+  /// Staf yang dinonaktifkan tidak bisa masuk dan tidak muncul di layar
+  /// pergantian petugas, TAPI seluruh riwayat transaksinya tetap utuh.
+  /// Dibedakan dari `deletedAt`: yang ini bisa dinyalakan lagi besok.
+  aktif Boolean @default(true)
+
+  // ── PIN perangkat POS ──────────────────────────────────────────────────────
+  //
+  // PIN 4-6 digit untuk membuka sesi kasir di terminal bersama — BUKAN
+  // pengganti kata sandi, dan tidak pernah bisa dipakai di halaman login biasa.
+  // Ruang tebakannya kecil (sejuta kemungkinan pada 6 digit, sepuluh ribu pada
+  // 4), jadi yang menjaganya bukan panjang PIN-nya melainkan penguncian
+  // sementara di bawah: menebak habis-habisan menjadi mustahil karena
+  // percobaannya yang dibatasi, bukan karena PIN-nya yang sulit.
+  //
+  // Di-hash dengan bcrypt, algoritma yang sama dengan `passwordHash` — tidak
+  // ada tempat kedua yang perlu diperiksa saat kelak biayanya dinaikkan.
+
+  /// Hash bcrypt PIN. Null = staf ini belum punya PIN.
+  pinHash String? @map("pin_hash")
+
+  pinDiperbaruiPada DateTime? @map("pin_diperbarui_pada")
+
+  /// Percobaan gagal BERUNTUN. Direset menjadi 0 begitu PIN benar.
+  pinGagal Int @default(0) @map("pin_gagal")
+
+  /// Penguncian sementara setelah percobaan gagal berulang.
+  pinTerkunciSampai DateTime? @map("pin_terkunci_sampai")
+
   deletedAt DateTime? @map("deleted_at")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
   cafe                Cafe                 @relation(fields: [cafeId], references: [id], onDelete: Cascade)
   dashboardPreference DashboardPreference?
+  jadwal              ShiftSchedule[]      @relation("JadwalStaf")
+  absensi             AttendanceRecord[]   @relation("AbsensiStaf")
+  shiftKasir          CashierShift[]       @relation("ShiftKasir")
+  digantikan          ShiftReplacement[]   @relation("PenggantiDigantikan")
+  menggantikan        ShiftReplacement[]   @relation("PenggantiMenggantikan")
   // Pesanan yang ditagih & yang dibatalkan staf ini. `onDelete: SetNull` di sisi
   // `Order`: menghapus seorang kasir tidak boleh ikut menghapus riwayat
   // penjualan, tapi jejaknya juga tidak boleh menunjuk baris yang sudah tiada.
@@ -226,8 +303,8 @@ model MenuItem {
 // ── Pesanan ──────────────────────────────────────────────────────────────────
 
 model Order {
-  id     String @id @default(uuid()) @db.Uuid
-  cafeId String @map("cafe_id") @db.Uuid
+  id          String      @id @default(uuid()) @db.Uuid
+  cafeId      String      @map("cafe_id") @db.Uuid
   /// NULL hanya untuk pesanan bawa pulang: tidak ada meja yang bisa disebut,
   /// dan menautkannya ke meja mana pun akan membuat meja itu tampak terisi.
   /// Pesanan makan di tempat WAJIB punya meja — dijaga di service, bukan di
@@ -238,10 +315,10 @@ model Order {
 
   // ── Bentuk pesanan ─────────────────────────────────────────────────────────
   /// DINE_IN | TAKEAWAY — lihat `lib/orderStatus.ts`.
-  fulfillmentType String @default("DINE_IN") @map("fulfillment_type")
+  fulfillmentType String  @default("DINE_IN") @map("fulfillment_type")
   /// TABLE_QR | CASHIER — dari mana pesanan ini lahir. Menentukan apakah ia
   /// perlu dikonfirmasi kasir dan bagaimana ia ditandai di Layar Dapur.
-  orderSource     String @default("TABLE_QR") @map("order_source")
+  orderSource     String  @default("TABLE_QR") @map("order_source")
   /// Nama tamu, bila kasir sempat menanyakannya. Tidak pernah wajib.
   customerName    String? @map("customer_name")
   /// Catatan untuk SELURUH pesanan (mis. "pisahkan piringnya"). Catatan per
@@ -270,6 +347,19 @@ model Order {
   /// Wajib terisi saat dibatalkan — pembatalan tanpa alasan tidak bisa
   /// dipertanggungjawabkan besok.
   alasanPembatalan String?   @map("alasan_pembatalan")
+
+  /// Shift kasir yang bertanggung jawab atas uang pesanan ini.
+  ///
+  /// NULL itu SAH dan punya dua arti berbeda yang keduanya benar:
+  ///   - Pesanan lama, dibuat sebelum modul shift ada. Ditandai "Data lama"
+  ///     di laporan, bukan disembunyikan.
+  ///   - Pesanan yang dibayar sendiri oleh tamu lewat gateway (Midtrans) dari
+  ///     meja. Tidak ada kasir yang menerimanya, jadi mengaitkannya ke sebuah
+  ///     shift justru akan membuat rekap tunai shift itu salah.
+  cashierShiftId String? @map("cashier_shift_id") @db.Uuid
+
+  /// Terminal tempat transaksi ini diproses. NULL untuk jalur non-kasir.
+  deviceId String? @map("device_id") @db.Uuid
 
   /// Kunci anti-kirim-ganda untuk pesanan yang dibuat di layar kasir.
   ///
@@ -323,12 +413,16 @@ model Order {
   cafe              Cafe               @relation(fields: [cafeId], references: [id], onDelete: Cascade)
   table             Table?             @relation(fields: [tableId], references: [id], onDelete: Restrict)
   cashier           User?              @relation("OrderCashier", fields: [cashierUserId], references: [id], onDelete: SetNull)
+  cashierShift      CashierShift?      @relation(fields: [cashierShiftId], references: [id], onDelete: SetNull)
   pembatal          User?              @relation("OrderCancelledBy", fields: [cancelledBy], references: [id], onDelete: SetNull)
   items             OrderItem[]
   payment           Payment?
   pembayaranManual  PembayaranManual?
   pushSubscriptions PushSubscription[]
 
+  // Anti-kirim-ganda pesanan kasir. NULL dianggap berbeda satu sama lain oleh
+  // PostgreSQL, jadi pesanan dari QR (yang tidak punya kunci) tidak terganggu.
+  @@unique([cafeId, idempotencyKey])
   @@index([cafeId])
   @@index([tableId])
   @@index([cafeId, status])
@@ -343,15 +437,14 @@ model Order {
   @@index([cafeId, kitchenStatus])
   // Filter "QR Meja / Kasir" di header layar kasir.
   @@index([cafeId, orderSource])
-  // Anti-kirim-ganda pesanan kasir. NULL dianggap berbeda satu sama lain oleh
-  // PostgreSQL, jadi pesanan dari QR (yang tidak punya kunci) tidak terganggu.
-  @@unique([cafeId, idempotencyKey])
   // Pencarian pesanan dari webhook / polling Midtrans lewat order_id gateway.
   @@index([midtransOrderId])
   // Pencarian pesanan dari webhook DOKU lewat invoice_number.
   @@index([dokuInvoiceNumber])
   // Mencari nomor antrian tertinggi milik kafe ini pada hari berjalan.
   @@index([cafeId, createdAt, queueNumber])
+  // Rekap penutupan shift menjumlahkan transaksi MILIK shift itu.
+  @@index([cashierShiftId])
   @@map("orders")
 }
 
@@ -435,6 +528,10 @@ model PembayaranManual {
   /// Bukti pembayaran yang diunggah (Cloudinary, folder per kafe).
   buktiUrl         String?          @map("bukti_url")
   buktiPublicId    String?          @map("bukti_public_id")
+  /// Shift & terminal yang memproses keputusan ini — disalin dari sesi kasir,
+  /// tidak pernah dari body permintaan.
+  cashierShiftId   String?          @map("cashier_shift_id") @db.Uuid
+  deviceId         String?          @map("device_id") @db.Uuid
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -568,12 +665,39 @@ model PaymentAuditLog {
   ip          String?
   userAgent   String? @map("user_agent")
 
+  // ── Perluasan: dari jejak pembayaran menjadi jejak audit umum ──────────────
+  //
+  // Nama tabelnya TETAP `payment_audit_logs`. Mengganti nama tabel yang sudah
+  // berisi data hanya untuk memperbaiki namanya adalah migrasi berisiko yang
+  // tidak membeli apa pun; yang bertambah cuma kolom, dan seluruh baris lama
+  // tetap terbaca persis seperti sebelumnya. Aksi shift/absensi/staf memakai
+  // tabel yang sama supaya "apa yang terjadi pada pesanan ini" dan "siapa yang
+  // membuka laci saat itu" bisa dibaca dalam SATU urutan waktu.
+
+  /// Jenis entitas yang disentuh: `order`, `cashier_shift`, `attendance`,
+  /// `user`, `shift_schedule`, `cashier_device`, `cash_movement`.
+  /// Null pada baris lama yang selalu menyangkut pesanan.
+  entityType String? @map("entity_type")
+  entityId   String? @map("entity_id")
+
+  /// Alasan yang ditulis manusia — wajib untuk pembatalan, penolakan,
+  /// pengecualian foto, dan koreksi pemilik.
+  alasan String?
+
+  /// Terminal tempat aksi terjadi, bila ada.
+  deviceId String? @map("device_id") @db.Uuid
+
+  /// Penanda satu alur permintaan — menyatukan beberapa baris audit yang lahir
+  /// dari satu ketukan tombol.
+  correlationId String? @map("correlation_id")
+
   createdAt DateTime @default(now()) @map("created_at")
 
   cafe Cafe @relation(fields: [cafeId], references: [id], onDelete: Cascade)
 
   @@index([cafeId, createdAt])
   @@index([orderId])
+  @@index([entityType, entityId])
   @@map("payment_audit_logs")
 }
 
@@ -682,4 +806,417 @@ model TenantRegistration {
   @@index([status])
   @@index([createdAt])
   @@map("tenant_registrations")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STAF, PERANGKAT, JADWAL, ABSENSI, DAN SHIFT KASIR
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Tiga hal yang sering dikira satu, dan sengaja dipisah di sini:
+//
+//   JADWAL   (`shift_templates` + `shift_schedules`) — RENCANA. Siapa
+//            seharusnya bekerja kapan. Ditulis pemilik, jauh sebelum harinya.
+//   ABSENSI  (`attendance_records`) — KEHADIRAN. Siapa yang benar-benar
+//            datang, jam berapa, dengan bukti foto. Urusan kepegawaian.
+//   SHIFT    (`cashier_shifts`) — TANGGUNG JAWAB UANG. Siapa yang memegang
+//            laci kas, sejak kapan, dengan modal berapa, dan berapa
+//            selisihnya saat ditutup. Urusan keuangan.
+//
+// Seorang staf bisa hadir tanpa memegang kas (dapur), dan satu kehadiran bisa
+// menaungi satu shift kas. Menyatukan ketiganya ke satu tabel — godaan yang
+// besar karena ketiganya punya "jam mulai" dan "jam selesai" — membuat
+// pertanyaan "berapa selisih kas Budi kemarin" dan "apakah Budi terlambat"
+// terpaksa dijawab dari baris yang sama, padahal keduanya bisa berbeda: Budi
+// bisa hadir tepat waktu lalu membuka laci satu jam kemudian.
+//
+// ── TIPE UANG ──
+// Seluruh kolom uang DI BAWAH INI bertipe BIGINT rupiah bulat, bukan
+// Decimal(12,2) seperti tabel-tabel lama. Rupiah tidak mengenal sen, dan
+// pembulatan pecahan pada penjumlahan kas laci adalah cara paling sunyi untuk
+// membuat "tunai seharusnya" meleset beberapa rupiah setiap hari. Tabel lama
+// (`orders`, `payments`) SENGAJA tidak ikut diubah — mengubah tipe kolom yang
+// sudah berisi data penjualan menuntut penguncian tabel, dan itu bukan harga
+// yang pantas dibayar untuk keseragaman. Konversinya terpusat di
+// `lib/rupiah.ts`, satu-satunya tempat kedua dunia itu bertemu.
+
+// ── Jadwal kerja ─────────────────────────────────────────────────────────────
+
+/// Pola shift yang berulang — "Pagi 07:00-15:00", "Malam 22:00-06:00".
+///
+/// Jamnya disimpan sebagai MENIT DARI TENGAH MALAM (0-1439), bukan teks
+/// "HH:MM" maupun DateTime. Alasannya aritmetika: hampir setiap perhitungan di
+/// modul ini adalah selisih menit (terlambat berapa lama, lembur berapa lama,
+/// apakah jam ini masih di dalam shift), dan menit bulat membuat semuanya
+/// menjadi pengurangan biasa — tanpa parsing teks, tanpa zona waktu yang ikut
+/// terbawa pada tipe DateTime yang sebenarnya cuma ingin menyatakan "jam tujuh".
+model ShiftTemplate {
+  id     String @id @default(uuid()) @db.Uuid
+  cafeId String @map("cafe_id") @db.Uuid
+  nama   String
+
+  /// Menit dari tengah malam, waktu KAFE (lihat `cafes.timezone`).
+  menitMulai   Int @map("menit_mulai")
+  menitSelesai Int @map("menit_selesai")
+
+  /// Shift yang berakhir di hari berikutnya (mis. 22:00 sampai 06:00).
+  ///
+  /// Disimpan EKSPLISIT, tidak diturunkan dari `menitSelesai <= menitMulai`,
+  /// karena turunan itu tidak bisa membedakan shift 24 jam (08:00 sampai 08:00
+  /// keesokan harinya) dari shift berdurasi nol — dan yang pertama benar-benar
+  /// dipakai kafe yang buka nonstop.
+  lewatTengahMalam Boolean @default(false) @map("lewat_tengah_malam")
+
+  /// Batas toleransi sebelum kehadiran dihitung TERLAMBAT.
+  toleransiTerlambatMenit Int @default(10) @map("toleransi_terlambat_menit")
+
+  /// Hari berlaku sebagai angka ISO 1-7 (1 = Senin sampai 7 = Minggu). Kosong =
+  /// berlaku setiap hari. Sengaja BUKAN 0-6 ala JavaScript: batas hari di modul
+  /// ini dihitung dengan kalender kafe, dan ISO adalah satu-satunya penomoran
+  /// yang tidak berubah arti saat dipindahkan antar bahasa.
+  hariBerlaku Int[] @default([]) @map("hari_berlaku")
+
+  aktif   Boolean @default(true)
+  urutan  Int     @default(0)
+  catatan String?
+
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  cafe      Cafe            @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  schedules ShiftSchedule[]
+  shifts    CashierShift[]
+
+  @@index([cafeId])
+  @@index([cafeId, aktif])
+  @@map("shift_templates")
+}
+
+/// Penugasan SATU staf pada SATU tanggal — hasil kali template x orang x hari.
+///
+/// `tanggal` adalah tanggal KALENDER KAFE tempat shift itu DIMULAI; shift yang
+/// melewati tengah malam tetap tercatat pada tanggal mulainya, sehingga "jadwal
+/// tanggal 5" berarti hal yang sama bagi pemilik dan bagi laporan.
+model ShiftSchedule {
+  id         String   @id @default(uuid()) @db.Uuid
+  cafeId     String   @map("cafe_id") @db.Uuid
+  templateId String   @map("template_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  tanggal    DateTime @db.Date
+
+  /// Terminal/laci yang direncanakan. Tidak mengikat — kasir boleh membuka
+  /// shift di terminal lain bila yang ini rusak.
+  deviceId String? @map("device_id") @db.Uuid
+
+  /// DIJADWALKAN | DIBATALKAN. Teks, bukan enum — lihat catatan kosakata di
+  /// `lib/orderStatus.ts`; alasannya sama persis.
+  status  String  @default("DIJADWALKAN")
+  catatan String?
+
+  dibuatOleh String? @map("dibuat_oleh") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cafe        Cafe               @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  template    ShiftTemplate      @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  user        User               @relation("JadwalStaf", fields: [userId], references: [id], onDelete: Cascade)
+  device      CashierDevice?     @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  attendances AttendanceRecord[]
+  shifts      CashierShift[]
+  penggantian ShiftReplacement[]
+
+  /// Satu orang tidak dijadwalkan dua kali pada template & tanggal yang sama.
+  /// Bentrok ANTAR template (dua shift yang jamnya bertumpang tindih) tidak
+  /// bisa dinyatakan sebagai constraint — jamnya ada di tabel lain — jadi itu
+  /// diperiksa service sebelum menulis.
+  @@unique([cafeId, templateId, userId, tanggal])
+  @@index([cafeId, tanggal])
+  @@index([userId, tanggal])
+  @@map("shift_schedules")
+}
+
+// ── Perangkat POS ────────────────────────────────────────────────────────────
+
+/// Terminal kasir milik sebuah kafe — satu tablet/PC di satu meja kasir.
+///
+/// Yang disimpan hanya HASH token perangkatnya, sealasan dengan kata sandi:
+/// database yang bocor tidak boleh langsung menjadi sekumpulan terminal yang
+/// bisa dipakai orang lain. Token aslinya diperlihatkan SEKALI saat pendaftaran
+/// dan sesudah itu tidak bisa dibaca ulang oleh siapa pun, termasuk pemilik.
+model CashierDevice {
+  id     String @id @default(uuid()) @db.Uuid
+  cafeId String @map("cafe_id") @db.Uuid
+  label  String
+
+  /// SHA-256 token perangkat. Unik lintas sistem: satu token, satu terminal.
+  tokenHash String @unique @map("token_hash")
+
+  aktif           Boolean   @default(true)
+  terakhirDipakai DateTime? @map("terakhir_dipakai")
+
+  dicabutPada DateTime? @map("dicabut_pada")
+  dicabutOleh String?   @map("dicabut_oleh") @db.Uuid
+  dibuatOleh  String?   @map("dibuat_oleh") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cafe      Cafe            @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  schedules ShiftSchedule[]
+  shifts    CashierShift[]
+
+  @@index([cafeId])
+  @@index([cafeId, aktif])
+  @@map("cashier_devices")
+}
+
+// ── Absensi ──────────────────────────────────────────────────────────────────
+
+/// Satu kehadiran: datang, (mungkin) pulang, beserta bukti fotonya.
+///
+/// Waktunya SELALU waktu server (`now()` saat permintaan diterima), tidak
+/// pernah waktu yang dikirim perangkat. Jam tablet bisa diputar mundur oleh
+/// siapa pun yang memegangnya, dan absensi yang bisa diputar mundur tidak
+/// membuktikan apa pun. Waktu tangkapan lokal boleh ikut dicatat sebagai
+/// keterangan tambahan (`diambilPada` di `attendance_photos`), tapi tidak
+/// pernah menggantikan yang ini.
+model AttendanceRecord {
+  id         String  @id @default(uuid()) @db.Uuid
+  cafeId     String  @map("cafe_id") @db.Uuid
+  userId     String  @map("user_id") @db.Uuid
+  scheduleId String? @map("schedule_id") @db.Uuid
+
+  masukPada  DateTime? @map("masuk_pada")
+  keluarPada DateTime? @map("keluar_pada")
+
+  /// Kosakata di `lib/absensiStatus.ts`: SCHEDULED | PRESENT | LATE |
+  /// PERMISSION | SICK | ABSENT | REPLACED | OVERTIME | EARLY_LEAVE | COMPLETED.
+  status String @default("SCHEDULED")
+
+  /// Hasil hitung terhadap jadwal, disimpan supaya laporan tidak perlu
+  /// mengulang aritmetika kalender untuk tiap baris — dan supaya angka yang
+  /// dilihat pemilik hari ini tetap sama setelah jadwalnya diubah besok.
+  terlambatMenit Int? @map("terlambat_menit")
+  lemburMenit    Int? @map("lembur_menit")
+  durasiMenit    Int? @map("durasi_menit")
+
+  deviceMasukId  String? @map("device_masuk_id") @db.Uuid
+  deviceKeluarId String? @map("device_keluar_id") @db.Uuid
+
+  /// Kamera gagal / perangkat tidak punya kamera. Wajib berpasangan dengan
+  /// alasan, dan menunggu persetujuan pemilik — foto tidak pernah dilewati
+  /// diam-diam.
+  pengecualianFoto   Boolean   @default(false) @map("pengecualian_foto")
+  alasanPengecualian String?   @map("alasan_pengecualian")
+  disetujuiOleh      String?   @map("disetujui_oleh") @db.Uuid
+  disetujuiPada      DateTime? @map("disetujui_pada")
+
+  catatan       String?
+  correlationId String? @map("correlation_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cafe     Cafe              @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  user     User              @relation("AbsensiStaf", fields: [userId], references: [id], onDelete: Cascade)
+  schedule ShiftSchedule?    @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  photos   AttendancePhoto[]
+  shifts   CashierShift[]
+
+  @@index([cafeId, masukPada])
+  @@index([userId, masukPada])
+  @@index([cafeId, status])
+  @@map("attendance_records")
+}
+
+/// Referensi foto absensi. Berkasnya di disk privat server, BUKAN di kolom ini.
+///
+/// Tabel terpisah dari `attendance_records` supaya masa simpan (retensi) bisa
+/// dijalankan tanpa menyentuh catatan kehadirannya: foto tiga bulan lalu boleh
+/// dihapus, sementara fakta bahwa orangnya hadir hari itu harus tetap ada
+/// selamanya. Baris ini bertahan setelah berkasnya hilang — `dihapusPada`
+/// menjadi jejak bahwa foto pernah ada dan sengaja dihapus, bukan hilang.
+model AttendancePhoto {
+  id           String @id @default(uuid()) @db.Uuid
+  cafeId       String @map("cafe_id") @db.Uuid
+  attendanceId String @map("attendance_id") @db.Uuid
+
+  /// MASUK | KELUAR.
+  jenis String
+
+  /// Nama berkas acak di disk — tanpa nama asli dari klien, tanpa ekstensi
+  /// ganda, dan tidak pernah dirangkai dari input pengguna. Itulah yang
+  /// membuat path traversal tidak punya bahan untuk dikerjakan.
+  namaBerkas String @map("nama_berkas")
+  mimeType   String @map("mime_type")
+  ukuranByte Int    @map("ukuran_byte")
+
+  /// Waktu SERVER saat berkas diterima — inilah yang berlaku.
+  diterimaPada DateTime @default(now()) @map("diterima_pada")
+
+  /// Waktu yang DIKLAIM perangkat saat memotret. Keterangan tambahan untuk
+  /// antrean offline; tidak pernah dipakai menghitung keterlambatan.
+  diambilPada DateTime? @map("diambil_pada")
+
+  /// Jarak antara keduanya melampaui ambang wajar, ditandai "Diunggah
+  /// terlambat" di layar, bukan disembunyikan.
+  terlambatDiunggah Boolean @default(false) @map("terlambat_diunggah")
+
+  dihapusPada DateTime? @map("dihapus_pada")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  cafe       Cafe             @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  attendance AttendanceRecord @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+
+  @@index([attendanceId])
+  @@index([cafeId, diterimaPada])
+  @@map("attendance_photos")
+}
+
+// ── Shift kasir ──────────────────────────────────────────────────────────────
+
+/// Satu periode tanggung jawab atas laci kas.
+///
+/// Inilah yang membuat pertanyaan "siapa yang memegang uang saat transaksi ini
+/// terjadi" punya jawaban. Setiap pembayaran yang disentuh kasir menyimpan
+/// `cashier_shift_id`, dan penutupan shift menjumlahkan persis transaksi yang
+/// menunjuk ke sini — bukan "semua transaksi antara jam sekian dan jam sekian",
+/// yang akan salah begitu dua terminal bekerja bersamaan.
+model CashierShift {
+  id           String  @id @default(uuid()) @db.Uuid
+  cafeId       String  @map("cafe_id") @db.Uuid
+  userId       String  @map("user_id") @db.Uuid
+  attendanceId String? @map("attendance_id") @db.Uuid
+  scheduleId   String? @map("schedule_id") @db.Uuid
+  deviceId     String? @map("device_id") @db.Uuid
+  templateId   String? @map("template_id") @db.Uuid
+
+  /// Nama shift SAAT ITU (snapshot). Template boleh diganti nama besok;
+  /// laporan bulan lalu tidak boleh ikut berubah karenanya.
+  namaShift String @map("nama_shift")
+
+  dibukaPada  DateTime  @default(now()) @map("dibuka_pada")
+  ditutupPada DateTime? @map("ditutup_pada")
+
+  /// AKTIF | DITUTUP.
+  status String @default("AKTIF")
+
+  // ── Uang (BIGINT rupiah — lihat catatan tipe uang di kepala bagian ini) ──
+  modalAwal BigInt @default(0) @map("modal_awal")
+
+  /// Diisi saat penutupan: yang benar-benar dihitung kasir di laci.
+  kasAktual BigInt? @map("kas_aktual")
+
+  /// Dihitung server saat penutupan, dibekukan di sini supaya rekap tidak
+  /// berubah bila transaksi lama dikoreksi belakangan.
+  kasSeharusnya BigInt? @map("kas_seharusnya")
+
+  /// `kasAktual - kasSeharusnya`. Negatif = kurang, positif = lebih.
+  selisih BigInt? @map("selisih")
+
+  catatanBuka  String? @map("catatan_buka")
+  catatanTutup String? @map("catatan_tutup")
+
+  /// Koreksi pemilik atas shift yang sudah ditutup. Nilai lamanya TIDAK
+  /// ditimpa diam-diam — perubahannya masuk audit log dengan alasannya.
+  dikoreksiOleh String?   @map("dikoreksi_oleh") @db.Uuid
+  dikoreksiPada DateTime? @map("dikoreksi_pada")
+  alasanKoreksi String?   @map("alasan_koreksi")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cafe       Cafe              @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  user       User              @relation("ShiftKasir", fields: [userId], references: [id], onDelete: Restrict)
+  attendance AttendanceRecord? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+  schedule   ShiftSchedule?    @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  device     CashierDevice?    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  template   ShiftTemplate?    @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  movements  CashMovement[]
+  orders     Order[]
+
+  // CATATAN: "satu kasir hanya boleh punya satu shift AKTIF" dan "satu terminal
+  // hanya boleh punya satu shift AKTIF" dipasang sebagai PARTIAL UNIQUE INDEX
+  // (WHERE status = 'AKTIF') lewat SQL mentah di migrasi — Prisma belum bisa
+  // menyatakan index parsial di schema. Constraint biasa tidak bisa dipakai:
+  // ia akan melarang kasir yang sama membuka shift KEDUA besok pagi. Jangan
+  // hapus index itu saat menjalankan `prisma migrate dev`.
+  @@index([cafeId, dibukaPada])
+  @@index([cafeId, status])
+  @@index([userId, dibukaPada])
+  @@map("cashier_shifts")
+}
+
+/// Uang yang masuk/keluar laci di luar penjualan — setoran awal tambahan,
+/// pengambilan untuk belanja, penukaran uang kecil.
+///
+/// Tanpa tabel ini, setiap pengambilan uang dari laci akan muncul sebagai
+/// "selisih kas" saat penutupan, dan selisih yang selalu ada berhenti menjadi
+/// peringatan bagi siapa pun.
+model CashMovement {
+  id      String @id @default(uuid()) @db.Uuid
+  cafeId  String @map("cafe_id") @db.Uuid
+  shiftId String @map("shift_id") @db.Uuid
+
+  /// MASUK | KELUAR.
+  jenis   String
+  nominal BigInt
+
+  /// Wajib. Uang yang berpindah tanpa alasan tertulis tidak bisa
+  /// dipertanggungjawabkan besok.
+  alasan String
+
+  actorUserId String? @map("actor_user_id") @db.Uuid
+
+  disetujuiOleh String?   @map("disetujui_oleh") @db.Uuid
+  disetujuiPada DateTime? @map("disetujui_pada")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  cafe  Cafe         @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  shift CashierShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@index([shiftId])
+  @@index([cafeId, createdAt])
+  @@map("cash_movements")
+}
+
+/// Permintaan menggantikan staf yang terjadwal.
+///
+/// Jadwalnya TIDAK diubah: `shift_schedules` tetap menyimpan siapa yang
+/// seharusnya datang, dan baris ini menyimpan siapa yang benar-benar datang
+/// beserta alasannya. Menimpa jadwal akan menghapus fakta bahwa penggantian
+/// pernah terjadi — persis fakta yang ingin dilihat pemilik di laporan.
+model ShiftReplacement {
+  id         String @id @default(uuid()) @db.Uuid
+  cafeId     String @map("cafe_id") @db.Uuid
+  scheduleId String @map("schedule_id") @db.Uuid
+
+  staffTerjadwalId String @map("staff_terjadwal_id") @db.Uuid
+  staffPenggantiId String @map("staff_pengganti_id") @db.Uuid
+
+  /// Wajib — pemilik menyetujui alasan, bukan sekadar nama.
+  alasan String
+
+  /// PENDING_APPROVAL | APPROVED | REJECTED.
+  status String @default("PENDING_APPROVAL")
+
+  diajukanPada    DateTime  @default(now()) @map("diajukan_pada")
+  diputuskanOleh  String?   @map("diputuskan_oleh") @db.Uuid
+  diputuskanPada  DateTime? @map("diputuskan_pada")
+  alasanKeputusan String?   @map("alasan_keputusan")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cafe           Cafe          @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  schedule       ShiftSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  staffTerjadwal User          @relation("PenggantiDigantikan", fields: [staffTerjadwalId], references: [id], onDelete: Cascade)
+  staffPengganti User          @relation("PenggantiMenggantikan", fields: [staffPenggantiId], references: [id], onDelete: Cascade)
+
+  @@index([cafeId, status])
+  @@index([scheduleId])
+  @@map("shift_replacements")
 }
