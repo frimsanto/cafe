@@ -36,6 +36,54 @@ export function requireOrderId(value: unknown): string {
   return bersih;
 }
 
+/**
+ * Panjang & bentuk referensi gateway yang masih masuk akal.
+ *
+ * Midtrans `order_id` dan nomor invoice DOKU adalah teks bebas yang kami sendiri
+ * yang menyusunnya (`CAFE-<n>`, `BLK-<n>`, dsb). Yang dibatasi karena itu bukan
+ * formatnya melainkan permukaannya: panjang wajar, dan hanya karakter yang
+ * memang muncul pada referensi sungguhan.
+ */
+const POLA_REFERENSI_GATEWAY = /^[A-Za-z0-9._:-]{1,100}$/;
+
+/**
+ * Kata yang lahir dari bug frontend, bukan dari pengguna.
+ *
+ * `/api/pembayaran/null/status` adalah gejala sebuah variabel yang belum terisi
+ * saat URL-nya dirakit. Dijawab 400 dengan jelas, bukan 404: 404 berarti "id ini
+ * benar tapi barangnya tidak ada", dan itu menyembunyikan kekeliruan pemanggil
+ * di balik jawaban yang terdengar normal.
+ */
+const KATA_KOSONG = new Set(['null', 'undefined', 'nan', 'none', 'false', '0']);
+
+/**
+ * Referensi pesanan pada `GET /api/pembayaran/:orderId/status`.
+ *
+ * Endpoint ini menerima DUA bentuk — id pesanan CafeOS (UUID) maupun referensi
+ * gateway — jadi `requireOrderId` di atas terlalu ketat untuknya.
+ *
+ * Kenapa diperiksa di sini dan bukan diserahkan ke Prisma: kolom `id` bertipe
+ * `uuid`, dan nilai yang bukan UUID membuat PostgreSQL menolak castnya. Prisma
+ * menerjemahkan penolakan itu menjadi `P2023`, yang keluar sebagai 500 di log
+ * kami — sebuah galat server untuk permintaan yang sebenarnya salah di sisi
+ * pemanggil. Endpoint ini publik dan dipanggil ponsel tamu, jadi ia menerima
+ * apa pun yang sempat dirakit peramban.
+ */
+export function parseReferensiPesanan(value: unknown): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw ApiError.badRequest('Referensi pesanan wajib diisi');
+  }
+  const bersih = value.trim();
+
+  if (KATA_KOSONG.has(bersih.toLowerCase())) {
+    throw ApiError.badRequest('Referensi pesanan tidak valid');
+  }
+  if (POLA_UUID.test(bersih)) return bersih;
+  if (POLA_REFERENSI_GATEWAY.test(bersih)) return bersih;
+
+  throw ApiError.badRequest('Referensi pesanan tidak valid');
+}
+
 /** Teks opsional yang di-trim & dipotong; string kosong menjadi null. */
 function teksOpsional(value: unknown, field: string, maks: number): string | null {
   if (value === undefined || value === null) return null;

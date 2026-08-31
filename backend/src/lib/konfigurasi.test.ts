@@ -7,6 +7,7 @@ import {
   keOrigin,
   originDiizinkan,
   siapkanDirektoriFoto,
+  trustProxy,
 } from './konfigurasi';
 
 /**
@@ -214,5 +215,39 @@ describe('originDiizinkan', () => {
   it('menerima permintaan tanpa header Origin', () => {
     expect(originDiizinkan(undefined, daftar)).toBe(true);
     expect(originDiizinkan('', daftar)).toBe(true);
+  });
+});
+
+/**
+ * `trust proxy` menentukan apakah Express boleh memercayai `X-Forwarded-For`.
+ *
+ * Bawaannya MATI, dan itu bukan kelalaian. Header itu teks biasa: selama Nginx
+ * belum dikonfigurasi menambahkan alamat peer sungguhan ke ujung rantai, nilai
+ * yang sampai ke backend adalah nilai yang diketik klien — dan pembatas laju
+ * yang memercayainya bisa dilewati seumur hidup hanya dengan mengarang IP baru
+ * pada tiap permintaan.
+ */
+describe('trustProxy', () => {
+  it('MATI bila tidak dikonfigurasi', () => {
+    expect(trustProxy({})).toBe(false);
+    expect(trustProxy({ TRUST_PROXY: '' })).toBe(false);
+    expect(trustProxy({ TRUST_PROXY: '   ' })).toBe(false);
+  });
+
+  it('bisa dimatikan secara eksplisit', () => {
+    expect(trustProxy({ TRUST_PROXY: 'false' })).toBe(false);
+    expect(trustProxy({ TRUST_PROXY: 'FALSE' })).toBe(false);
+    expect(trustProxy({ TRUST_PROXY: '0' })).toBe(false);
+  });
+
+  it('menerima jumlah hop sebagai angka, bukan teks', () => {
+    // Express membedakan keduanya: angka = hitungan hop, teks = daftar alamat.
+    expect(trustProxy({ TRUST_PROXY: '1' })).toBe(1);
+    expect(trustProxy({ TRUST_PROXY: '2' })).toBe(2);
+  });
+
+  it('meneruskan nama & CIDR apa adanya untuk Express', () => {
+    expect(trustProxy({ TRUST_PROXY: 'loopback' })).toBe('loopback');
+    expect(trustProxy({ TRUST_PROXY: ' 127.0.0.1/8 ' })).toBe('127.0.0.1/8');
   });
 });

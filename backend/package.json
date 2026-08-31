@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
+    "build:rilis": "tsc && node ../scripts/tulis-penanda-versi.mjs --dir dist",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "prisma:generate": "prisma generate",

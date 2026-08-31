@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:rilis": "tsc --noEmit && vite build && node ../scripts/tulis-penanda-versi.mjs --dir dist",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "test": "vitest run",

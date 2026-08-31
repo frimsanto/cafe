@@ -24,17 +24,25 @@ interface RateLimitOptions {
 }
 
 /**
- * Alamat IP pemanggil. `X-Forwarded-For` didahulukan karena di produksi
- * backend berada di belakang reverse proxy — tanpa ini setiap permintaan
- * tampak berasal dari IP proxy dan satu pendaftar bisa memblokir semua orang.
+ * Alamat IP pemanggil, sebagaimana ditetapkan Express.
  *
- * Hop pertama yang dipakai (klien asli); sisanya adalah rantai proxy.
+ * `req.ip` DENGAN SENGAJA dipakai apa adanya, bukan `X-Forwarded-For` yang
+ * dibaca sendiri. Perbedaannya menentukan apakah pembatas ini benar-benar
+ * menahan sesuatu:
+ *
+ *   - Membaca headernya sendiri berarti memercayai teks yang diketik klien.
+ *     Selama proxy tidak menimpa header itu, siapa pun bisa mengarang IP baru
+ *     pada tiap permintaan dan kuota tidak pernah tersentuh sama sekali.
+ *   - `req.ip` menghormati setelan `trust proxy` aplikasi (lihat
+ *     `lib/konfigurasi.ts`). Bila tidak dinyalakan, ia mengembalikan alamat
+ *     peer sungguhan — 127.0.0.1 di belakang Nginx, jadi kuotanya global tapi
+ *     TIDAK bisa dilewati. Bila dinyalakan, Express sendiri yang menelusuri
+ *     rantai dari kanan dan berhenti pada hop pertama yang tidak dipercaya.
+ *
+ * Yang tumpul dan benar mengalahkan yang tajam dan bisa dikarang.
  */
 function alamatIp(req: Request): string {
-  const diteruskan = req.headers['x-forwarded-for'];
-  const baris = Array.isArray(diteruskan) ? diteruskan[0] : diteruskan;
-  const hopPertama = baris?.split(',')[0]?.trim();
-  return hopPertama || req.ip || req.socket.remoteAddress || 'tak-dikenal';
+  return req.ip || req.socket.remoteAddress || 'tak-dikenal';
 }
 
 export function rateLimit({ maks, jendelaMs, pesan }: RateLimitOptions) {

@@ -209,6 +209,48 @@ export function originDiizinkan(
   return normal !== null && daftar.includes(normal);
 }
 
+// ── Reverse proxy ────────────────────────────────────────────────────────────
+
+/**
+ * Nilai `trust proxy` untuk Express — dan kenapa bawaannya MEMATIKAN.
+ *
+ * ── Masalahnya ──
+ *
+ * Di belakang Nginx, `req.socket.remoteAddress` selalu 127.0.0.1. Pembatas laju
+ * yang memakainya berlaku global: satu pendaftar yang membanjiri formulir
+ * memblokir semua orang. Godaannya lalu membaca `X-Forwarded-For` sendiri —
+ * dan itu justru menukar satu masalah dengan yang jauh lebih buruk.
+ *
+ * `X-Forwarded-For` adalah header biasa. Kalau proxy-nya tidak MENIMPA atau
+ * MENAMBAHKAN ke header itu, nilai yang sampai ke backend adalah nilai yang
+ * diketik klien. Memercayainya berarti kuota bisa dilewati seumur hidup hanya
+ * dengan mengarang IP baru di tiap permintaan — pembatas laju yang terlihat
+ * bekerja padahal tidak menahan apa pun.
+ *
+ * ── Karena itu variabel ini ada ──
+ *
+ * `TRUST_PROXY` dinyalakan HANYA setelah Nginx benar-benar dikonfigurasi dengan
+ * `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for`, yang menambahkan
+ * alamat peer sungguhan di UJUNG rantai. Express lalu berjalan dari kanan,
+ * melewati hop yang dipercaya, dan berhenti di alamat sungguhan itu.
+ *
+ * Selama variabel ini tidak diisi, header apa pun diabaikan dan kuota berlaku
+ * global. Itu memang lebih tumpul — tapi kuota tumpul yang benar-benar menahan
+ * jauh lebih baik daripada kuota per-IP yang bisa dikarang siapa saja.
+ *
+ * Nilai: `loopback` (Nginx satu mesin — yang dipakai di produksi), sebuah
+ * angka hop, daftar CIDR dipisah koma, atau kosong/`false` untuk mematikan.
+ */
+export function trustProxy(env: NodeJS.ProcessEnv = process.env): string | number | false {
+  const mentah = (env.TRUST_PROXY ?? '').trim();
+  if (mentah === '' || mentah.toLowerCase() === 'false' || mentah === '0') return false;
+
+  // Angka murni = jumlah hop proxy yang dipercaya.
+  if (/^[1-9][0-9]*$/.test(mentah)) return Number(mentah);
+
+  return mentah;
+}
+
 /**
  * Direktori foto yang sedang berlaku, dihitung sekali lalu diingat.
  *

@@ -17,6 +17,7 @@ import {
   parsePermintaanManualInput,
   parseTolakPembayaranInput,
   requireOrderId,
+  parseReferensiPesanan,
 } from '../validation/pembayaran.validation';
 
 export const pembayaranRouter = Router();
@@ -253,7 +254,14 @@ pembayaranRouter.get(
 pembayaranRouter.get(
   '/pembayaran/:orderId/status',
   asyncHandler(async (req, res) => {
-    const data = await pembayaranService.statusPembayaran(req.params.orderId);
+    // Divalidasi SEBELUM menyentuh database. Kolom `orders.id` bertipe `uuid`,
+    // dan nilai yang bukan UUID membuat PostgreSQL menolak castnya — Prisma
+    // menerjemahkannya menjadi `P2023` yang keluar sebagai 500 di log kami,
+    // untuk permintaan yang sebenarnya salah di sisi pemanggil. Endpoint ini
+    // publik dan dipanggil ponsel tamu, jadi ia menerima apa pun yang sempat
+    // dirakit peramban — termasuk `/pembayaran/null/status`.
+    const referensi = parseReferensiPesanan(req.params.orderId);
+    const data = await pembayaranService.statusPembayaran(referensi);
     res.json({ data });
   }),
 );

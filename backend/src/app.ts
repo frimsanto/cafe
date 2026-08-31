@@ -3,7 +3,8 @@ import cors from 'cors';
 import { prisma } from './lib/prisma';
 import { apiRouter } from './routes';
 import { errorHandler, notFoundHandler } from './middleware/error';
-import { daftarOriginDiizinkan } from './lib/konfigurasi';
+import { daftarOriginDiizinkan, trustProxy } from './lib/konfigurasi';
+import { versiArtefak } from './lib/versi';
 
 /**
  * Membuat instance aplikasi Express.
@@ -12,6 +13,12 @@ import { daftarOriginDiizinkan } from './lib/konfigurasi';
  */
 export function createApp() {
   const app = express();
+
+  // Di belakang Nginx, alamat peer selalu 127.0.0.1. `trust proxy` yang
+  // menentukan apakah Express boleh menelusuri `X-Forwarded-For` untuk mencari
+  // alamat sungguhan — dan bawaannya MATI, karena header itu bisa diketik
+  // klien selama proxy tidak menambahkannya sendiri. Lihat `lib/konfigurasi.ts`.
+  app.set('trust proxy', trustProxy());
 
   // CORS dengan `credentials`, supaya cookie HttpOnly milik terminal POS ikut
   // terkirim (lihat `lib/cookie.ts`).
@@ -54,8 +61,12 @@ export function createApp() {
   );
 
   // Liveness — server hidup.
+  //
+  // Ikut menyebut versi artefaknya. Penggelaran memindahkan folder `dist` lewat
+  // scp, bukan `git pull`, jadi tanpa ini tidak ada cara memastikan build mana
+  // yang benar-benar berjalan selain menebak dari cap waktu berkas.
   app.get('/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', service: 'cafeos-backend' });
+    res.json({ status: 'ok', service: 'cafeos-backend', versi: versiArtefak() });
   });
 
   // Readiness — koneksi database sehat.
