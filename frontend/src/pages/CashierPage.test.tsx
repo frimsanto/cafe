@@ -64,7 +64,7 @@ vi.mock('../api/pembayaran', () => ({
 
 // Realtime dimatikan: uji ini tentang tampilan, bukan tentang WebSocket.
 vi.mock('../lib/realtime', () => ({
-  subscribeRealtime: (_c: string, _h: unknown, opts?: { onStatus?: (s: string) => void }) => {
+  subscribeRealtime: (_h: unknown, opts?: { onStatus?: (s: string) => void }) => {
     opts?.onStatus?.('online');
     return () => undefined;
   },

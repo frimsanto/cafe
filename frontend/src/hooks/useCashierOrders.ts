@@ -209,7 +209,6 @@ export function useCashierOrders(cafeId: string): CashierOrders {
   useEffect(() => {
     if (!cafeId) return;
     return subscribeRealtime(
-      cafeId,
       (message) => {
         if (
           message.type === 'kitchen.order.created' ||

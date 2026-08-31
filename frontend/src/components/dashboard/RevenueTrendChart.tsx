@@ -152,7 +152,7 @@ export default function RevenueTrendChart({ cafeId }: { cafeId: string }) {
 
   useEffect(() => {
     if (!cafeId) return;
-    return subscribeRealtime(cafeId, (message) => {
+    return subscribeRealtime((message) => {
       if (message.type === 'dashboard.order.paid') {
         void load(periodRef.current, { quiet: true });
       }

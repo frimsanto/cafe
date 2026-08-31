@@ -165,7 +165,7 @@ export default function DashboardPage() {
   // Perbarui KPI saat ada pesanan dibayar atau status dapur berubah.
   useEffect(() => {
     if (!cafeId) return;
-    return subscribeRealtime(cafeId, (message) => {
+    return subscribeRealtime((message) => {
       if (
         message.type === 'dashboard.order.paid' ||
         message.type === 'kitchen.order.created' ||

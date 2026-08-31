@@ -1,4 +1,4 @@
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 
 /**
  * Cookie HttpOnly untuk token perangkat & sesi kasir.
@@ -58,13 +58,25 @@ function amanUntukProduksi(): boolean {
 }
 
 /**
+ * Sumber cookie yang cukup untuk pembacaan di bawah.
+ *
+ * Sengaja BUKAN `Request` Express: handshake WebSocket hanya punya
+ * `IncomingMessage` mentah, dan sesi terminal POS harus dibuktikan di sana juga
+ * (lihat `realtime/wsAuth.ts`). Keduanya memenuhi bentuk ini, sehingga tidak ada
+ * pembacaan cookie kedua yang bisa menyimpang dari yang ini.
+ */
+export interface SumberCookie {
+  headers: { cookie?: string | undefined };
+}
+
+/**
  * Baca satu cookie dari header permintaan.
  *
  * Ditulis tangan alih-alih memasang `cookie-parser`: yang dibutuhkan hanya
  * pembacaan dua nama cookie, dan `res.cookie()` untuk menulisnya sudah bawaan
  * Express. Satu dependensi lebih sedikit pada jalur yang menyentuh autentikasi.
  */
-export function bacaCookie(req: Request, nama: string): string | null {
+export function bacaCookie(req: SumberCookie, nama: string): string | null {
   const header = req.headers.cookie;
   if (!header) return null;
 

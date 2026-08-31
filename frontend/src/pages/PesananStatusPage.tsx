@@ -378,7 +378,6 @@ export default function PesananStatusPage() {
     if (!cafeId || !idPesanan) return;
 
     return subscribeRealtime(
-      cafeId,
       (message) => {
         switch (message.type) {
           case 'kitchen.order.created':

@@ -66,7 +66,7 @@ export default function TopMenuList({ cafeId, period = 'today' }: TopMenuListPro
 
   useEffect(() => {
     if (!cafeId) return;
-    return subscribeRealtime(cafeId, (message) => {
+    return subscribeRealtime((message) => {
       if (message.type === 'dashboard.order.paid') void load({ quiet: true });
     });
   }, [cafeId, load]);

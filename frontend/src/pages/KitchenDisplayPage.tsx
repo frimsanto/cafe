@@ -150,7 +150,7 @@ export default function KitchenDisplayPage() {
   // Aliran realtime dari server.
   useEffect(() => {
     if (!cafeId) return;
-    return subscribeRealtime(cafeId, (message) => {
+    return subscribeRealtime((message) => {
       const order = message.data as OrderWithTableDTO | undefined;
       if (!order?.id) return;
 

@@ -1,20 +1,37 @@
+import { readAuthToken } from './apiClient';
 import { WS_BASE_URL } from './apiConfig';
 
 /**
  * Klien WebSocket realtime.
  *
  * Protokol mengikuti server (`backend/src/realtime/realtime.ts`):
- *   klien → server : { type: 'subscribe', cafeId, orderId? }
+ *   klien → server : { type: 'subscribe', orderId? }
  *   server → klien : { type: <event>, data: <payload> }
  *
- * Langganan juga dikirim lewat query saat menyambung, lalu DIULANG sebagai
- * pesan `subscribe` setelah `open`. Pengulangan ini penting: saat sambungan
- * putus dan tersambung lagi, server tidak mengingat langganan lama.
+ * ── Kenapa `cafeId` tidak lagi dikirim ──
  *
- * `orderId` mempersempit langganan ke satu pesanan — dipakai halaman pelanggan
- * supaya ponsel tamu tidak ikut menerima aliran pesanan kafe seluruhnya. Layar
- * staf memanggilnya tanpa `orderId` dan tetap mendapat semuanya.
+ * Dulu kafe dilampirkan sebagai parameter URL, dan server memercayainya. Itu
+ * berarti siapa pun yang bisa membuka koneksi dapat menyebut kafe siapa pun.
+ * Sekarang kafe DITENTUKAN SERVER dari sesi yang dibuktikan saat handshake —
+ * jadi tidak ada lagi yang perlu dikirim dari sini, dan tidak ada lagi yang bisa
+ * dipalsukan.
+ *
+ * Yang dikirim sebagai gantinya adalah bukti sesi, dan bentuknya berbeda per
+ * jenis layar:
+ *
+ *   - Layar staf (dasbor, kasir, KDS) → token akses di `Sec-WebSocket-Protocol`.
+ *     API WebSocket peramban tidak mengizinkan header lain, dan `?token=…` akan
+ *     berakhir tertulis di access log Nginx.
+ *   - Terminal POS → cookie HttpOnly, terbawa sendiri oleh peramban.
+ *   - Ponsel tamu → tidak punya sesi; yang dibawanya `orderId`, dan server
+ *     mengunci langganannya pada pesanan itu saja.
+ *
+ * Langganan tetap DIULANG sebagai pesan `subscribe` setelah `open`, karena
+ * server tidak mengingat penyempitan `orderId` sebuah koneksi yang sudah putus.
  */
+
+/** Subprotokol yang harus disepakati kedua sisi. */
+const PROTOKOL_UTAMA = 'cafeos.v1';
 
 /** Nama event yang dipancarkan server. */
 export type RealtimeEvent =
@@ -25,7 +42,8 @@ export type RealtimeEvent =
   | 'payment.status.changed'
   | 'dashboard.order.paid'
   | 'connected'
-  | 'subscribed';
+  | 'subscribed'
+  | 'error';
 
 export interface RealtimeMessage {
   type: RealtimeEvent | string;
@@ -62,21 +80,36 @@ const MAX_ATTEMPTS = 5;
  */
 const STABLE_AFTER_MS = 10_000;
 
+/**
+ * Kode penutupan yang berarti "jangan coba lagi".
+ *
+ * Sesi yang ditolak tidak akan berubah karena dicoba ulang lima kali; yang
+ * dihasilkan hanya lima permintaan sia-sia. Yang memperbaikinya adalah masuk
+ * ulang — dan `offline` yang muncul seketika memberi tahu itu jauh lebih cepat
+ * daripada setengah menit percobaan diam-diam.
+ */
+const KODE_TIDAK_BERHAK = new Set([4401, 4403]);
+
 export interface RealtimeOptions {
   /** Dipanggil setiap keadaan sambungan berubah. */
   onStatus?: (status: RealtimeStatus) => void;
-  /** Persempit langganan ke satu pesanan (halaman status pelanggan). */
+  /**
+   * Persempit langganan ke satu pesanan.
+   *
+   * Untuk halaman status pelanggan ini WAJIB — tanpa sesi staf maupun cookie
+   * terminal, `orderId` inilah satu-satunya yang membuat server mengenali kafe
+   * mana yang dimaksud, dan server mengunci langganannya di sana.
+   */
   orderId?: string;
 }
 
 /**
- * Sambungkan ke kanal realtime sebuah kafe.
+ * Sambungkan ke kanal realtime.
  *
  * Mengembalikan fungsi pemutus; panggil saat komponen dilepas supaya tidak ada
  * sambungan menganggur yang terus mencoba menyambung ulang.
  */
 export function subscribeRealtime(
-  cafeId: string,
   onMessage: Listener,
   options: RealtimeOptions = {},
 ): () => void {
@@ -111,12 +144,19 @@ export function subscribeRealtime(
     if (closed) return;
     setStatus(attempt === 0 ? 'connecting' : 'reconnecting');
 
-    const url =
-      `${WS_BASE_URL}?cafeId=${encodeURIComponent(cafeId)}` +
-      (orderId ? `&orderId=${encodeURIComponent(orderId)}` : '');
+    const url = orderId
+      ? `${WS_BASE_URL}?orderId=${encodeURIComponent(orderId)}`
+      : WS_BASE_URL;
+
+    // Token dibaca SETIAP kali menyambung, bukan sekali di awal. Token akses
+    // berumur 15 menit sementara sambungan ini hidup berjam-jam; yang dipakai
+    // saat menyambung ulang harus yang terbaru, bukan yang sudah mati.
+    const token = readAuthToken();
+    const protokol = token ? [PROTOKOL_UTAMA, `bearer.${token}`] : [PROTOKOL_UTAMA];
+
     let ws: WebSocket;
     try {
-      ws = new WebSocket(url);
+      ws = new WebSocket(url, protokol);
     } catch {
       // URL tidak sah / protokol diblokir — tidak ada soket yang perlu dibersihkan.
       scheduleRetry();
@@ -126,7 +166,7 @@ export function subscribeRealtime(
 
     const handleOpen = () => {
       setStatus('online');
-      ws.send(JSON.stringify({ type: 'subscribe', cafeId, orderId }));
+      ws.send(JSON.stringify({ type: 'subscribe', orderId }));
       clearStableTimer();
       stableTimer = setTimeout(() => {
         stableTimer = null;
@@ -143,10 +183,14 @@ export function subscribeRealtime(
     };
 
     // `close` juga menyusul setiap `error`, jadi sambung ulang cukup di sini.
-    const handleClose = () => {
+    const handleClose = (event: CloseEvent) => {
       detach();
       socket = null;
       clearStableTimer();
+      if (KODE_TIDAK_BERHAK.has(event.code)) {
+        setStatus('offline');
+        return;
+      }
       scheduleRetry();
     };
 

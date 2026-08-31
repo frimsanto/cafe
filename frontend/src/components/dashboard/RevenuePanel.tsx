@@ -74,7 +74,7 @@ export default function RevenuePanel({ cafeId }: { cafeId: string }) {
   // Pesanan baru dibayar → ambil ulang angka periode yang sedang tampil.
   useEffect(() => {
     if (!cafeId) return;
-    return subscribeRealtime(cafeId, (message) => {
+    return subscribeRealtime((message) => {
       if (message.type === 'dashboard.order.paid') {
         void load(periodRef.current, { quiet: true });
       }

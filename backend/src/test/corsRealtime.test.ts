@@ -151,7 +151,13 @@ describe('CSRF pada jalur POS', () => {
 
 describe('WebSocket realtime', () => {
   /**
-   * Buka WS dan laporkan apakah ia tersambung atau ditolak.
+   * Buka WS dan laporkan status penolakannya.
+   *
+   * Yang diperiksa berkas ini hanyalah LAPIS PERTAMA — daftar origin. Autentikasi
+   * sesinya sendiri diuji di `realtimeAuth.test.ts`, tempat Prisma ditiru;
+   * di sini tidak ada satu pun koneksi yang membawa sesi, jadi yang membedakan
+   * kedua lapis adalah status HTTP-nya: 403 bila origin-nya ditolak, 401 bila
+   * origin-nya lolos tapi tidak ada sesi yang bisa dibuktikan.
    *
    * Dua kehalusan `ws` yang harus diurus, keduanya soal membersihkan diri:
    *
@@ -162,56 +168,52 @@ describe('WebSocket realtime', () => {
    *   2. `close()` pada koneksi yang belum pernah terbentuk melempar secara
    *      asinkron. `terminate()` aman di kedua keadaan.
    */
-  function coba(origin?: string): Promise<'tersambung' | 'ditolak'> {
+  function coba(origin?: string): Promise<'tersambung' | number> {
     return new Promise((resolve) => {
       const ws = new WebSocket(`${alamatWs}?cafeId=cafe-a`, {
         headers: origin ? { Origin: origin } : {},
       });
       let sudah = false;
-      const selesai = (hasil: 'tersambung' | 'ditolak') => {
+      const selesai = (hasil: 'tersambung' | number) => {
         if (sudah) return;
         sudah = true;
         ws.terminate();
         resolve(hasil);
       };
       ws.on('open', () => selesai('tersambung'));
-      ws.on('unexpected-response', () => selesai('ditolak'));
-      ws.on('error', () => selesai('ditolak'));
+      ws.on('unexpected-response', (_req, res) => selesai(res.statusCode ?? 0));
+      ws.on('error', () => selesai(0));
     });
   }
 
-  it('menerima koneksi dari origin terdaftar', async () => {
-    expect(await coba(ORIGIN_SAH)).toBe('tersambung');
+  /**
+   * CORS TIDAK BERLAKU pada WebSocket — peramban mengirim `Origin` tapi tidak
+   * ada aturan yang menghentikannya bila server diam saja. Daftar origin ditolak
+   * lebih dulu, sebelum sesi apa pun dicari: lebih murah, dan tidak menyentuh
+   * database.
+   */
+  it('menolak koneksi dari origin asing dengan 403', async () => {
+    expect(await coba(ORIGIN_ASING)).toBe(403);
   });
 
   /**
-   * CORS TIDAK BERLAKU pada WebSocket — peramban mengirim `Origin` tapi tidak
-   * ada aturan yang menghentikannya bila server diam saja. Tanpa pemeriksaan
-   * ini, halaman mana pun bisa membuka `ws://…/ws?cafeId=<id>` dan ikut
-   * mendengarkan aliran pesanan sebuah kafe.
+   * INTI perbaikan. Sebelumnya origin terdaftar sudah cukup untuk masuk, dan
+   * `cafeId` diambil apa adanya dari query — sehingga satu parameter URL memberi
+   * akses ke aliran pesanan kafe mana pun. Sekarang origin yang sah hanya
+   * membawa sampai ke pemeriksaan sesi, dan tanpa sesi ia berhenti di 401.
    */
-  it('menolak koneksi dari origin asing', async () => {
-    expect(await coba(ORIGIN_ASING)).toBe('ditolak');
+  it('menolak origin terdaftar yang tidak membawa sesi apa pun', async () => {
+    expect(await coba(ORIGIN_SAH)).toBe(401);
   });
 
-  // Klien non-peramban (uji, skrip operator) tidak punya cookie siapa pun untuk
-  // disalahgunakan.
-  it('menerima koneksi tanpa header Origin', async () => {
-    expect(await coba()).toBe('tersambung');
-  });
-
-  it('menyapa klien dengan status langganan awalnya', async () => {
-    const pesan = await new Promise<Record<string, unknown>>((resolve, reject) => {
-      const ws = new WebSocket(`${alamatWs}?cafeId=cafe-a`, {
-        headers: { Origin: ORIGIN_SAH },
-      });
-      ws.on('message', (raw) => {
-        ws.terminate();
-        resolve(JSON.parse(raw.toString()));
-      });
-      ws.on('error', reject);
-    });
-
-    expect(pesan).toMatchObject({ type: 'connected', cafeId: 'cafe-a' });
+  /**
+   * Yang paling penting dari ketiganya: koneksi TANPA `Origin` dulu diterima
+   * begitu saja, dengan alasan "klien non-peramban tidak punya cookie untuk
+   * disalahgunakan". Alasan itu keliru — justru `curl` dan skrip mana pun bisa
+   * memilih untuk tidak mengirim Origin, sehingga daftar origin dilewati cuma
+   * dengan menghilangkan satu header.
+   */
+  it('menolak koneksi tanpa header Origin yang tidak membawa sesi', async () => {
+    expect(await coba()).toBe(401);
   });
 });
