@@ -86,7 +86,19 @@ const KOSONG: Record<TabKasir, { ikon: string; judul: string; pesan: string }> =
   },
 };
 
-export default function CashierPage() {
+interface CashierPageProps {
+  /**
+   * Dirender TANPA kerangka pemilik (`AppLayout`).
+   *
+   * Dipakai saat halaman ini menjadi tab "Kasir" di dalam `PosShell` — layar
+   * terminal POS yang sudah punya kepala, jam berjalan, dan navigasinya
+   * sendiri. Bagian A menuntut kasir tidak melihat rel navigasi pemilik, dan
+   * dua kerangka yang bertumpuk juga akan menampilkan dua judul "Kasir".
+   */
+  embedded?: boolean;
+}
+
+export default function CashierPage({ embedded = false }: CashierPageProps = {}) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const cafeId = user?.cafeId ?? '';
@@ -319,17 +331,8 @@ export default function CashierPage() {
   const adaFilter =
     kasir.filter.fulfillmentType !== null || kasir.filter.orderSource !== null;
 
-  return (
-    <AppLayout
-      title="Kasir"
-      subtitle={
-        ringkasan
-          ? `${ringkasan.perluKonfirmasi} perlu diproses · ${formatRupiah(
-              ringkasan.totalHariIni,
-            )} hari ini`
-          : 'Memuat ringkasan…'
-      }
-    >
+  const isi = (
+    <>
       <div className="space-y-4">
         {/* Kepala: angka, tombol utama, pencarian, filter */}
         <section className="rounded-2xl bg-warm-paper p-4 shadow-sm ring-1 ring-warm-line">
@@ -664,6 +667,26 @@ export default function CashierPage() {
           onClose={() => setReceipt(null)}
         />
       )}
+    </>
+  );
+
+  // Di dalam terminal POS, kerangkanya sudah disediakan `PosShell` — lengkap
+  // dengan nama kasir, shift berjalan, dan tombol Ganti Petugas. Yang dibutuhkan
+  // dari sini hanya isinya.
+  if (embedded) return isi;
+
+  return (
+    <AppLayout
+      title="Kasir"
+      subtitle={
+        ringkasan
+          ? `${ringkasan.perluKonfirmasi} perlu diproses · ${formatRupiah(
+              ringkasan.totalHariIni,
+            )} hari ini`
+          : 'Memuat ringkasan…'
+      }
+    >
+      {isi}
     </AppLayout>
   );
 }

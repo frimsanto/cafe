@@ -36,6 +36,7 @@ type IconKey =
   | 'kitchen'
   | 'tables'
   | 'staff'
+  | 'schedule'
   | 'payment';
 
 interface NavItem {
@@ -58,6 +59,7 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { label: 'Layar Dapur', icon: 'kitchen', to: '/dapur' },
     { label: 'Manajemen Meja', icon: 'tables', to: '/dasbor/meja' },
     { label: 'Manajemen Staf', icon: 'staff', to: '/dasbor/staf' },
+    { label: 'Jadwal Kerja', icon: 'schedule', to: '/dasbor/jadwal' },
     { label: 'Pembayaran', icon: 'payment', to: '/dasbor/pembayaran' },
   ],
   KASIR: [
@@ -134,6 +136,13 @@ function NavIcon({ name }: { name: IconKey }) {
           <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
           <circle cx="9" cy="7" r="4" />
           <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+      );
+    case 'schedule': // kalender
+      return (
+        <svg {...svgProps} aria-hidden>
+          <rect x="3" y="5" width="18" height="16" rx="2" />
+          <path d="M3 10h18M8 3v4M16 3v4" />
         </svg>
       );
     case 'payment': // dompet

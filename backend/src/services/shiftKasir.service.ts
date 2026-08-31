@@ -5,6 +5,8 @@ import { dariDecimal, jumlah, keBigInt, keNumberAtauNol } from '../lib/rupiah';
 import { normalisasiStatusShift, type JenisKas } from '../lib/shiftStatus';
 import { AKSI_AUDIT, auditLogService, type AktorAudit } from './auditLog.service';
 import { penggantianService } from './penggantian.service';
+import { ORDER_INCLUDE } from '../lib/orderInclude';
+import { toCashierOrderDTO, type CashierOrderDTO } from '../dto/cashier.dto';
 
 /**
  * Shift kasir — tanggung jawab atas laci kas.
@@ -559,5 +561,82 @@ export const shiftKasirService = {
     });
 
     return toShiftDTO(diperbarui as ShiftLengkap);
+  },
+};
+
+/**
+ * Riwayat pribadi seorang kasir — Bagian K.
+ *
+ * Sengaja BUKAN memakai `cashier.service.listOrders`: yang itu melayani layar
+ * antrean dan menjawab "apa yang perlu dikerjakan kafe sekarang". Yang ini
+ * menjawab pertanyaan berbeda — "apa yang SAYA kerjakan" — dan batasnya justru
+ * yang menentukan bentuknya:
+ *
+ *   - Hanya transaksi yang menunjuk shift MILIK kasir ini. Bukan "transaksi di
+ *     rentang waktu shiftnya": dua terminal yang berjalan bersamaan akan
+ *     membuat kasir melihat penjualan rekannya sebagai miliknya sendiri.
+ *   - Dibatasi shift terakhir saja, dan pemilik yang menentukan apakah kasir
+ *     boleh melihat lebih dari shift yang sedang berjalan
+ *     (`cafes.kasir_lihat_riwayat`).
+ *
+ * Yang TIDAK pernah keluar dari sini: omzet kafe, transaksi kasir lain, dan
+ * selisih kas siapa pun selain dirinya.
+ */
+export const riwayatKasirService = {
+  async milikSaya(
+    cafeId: string,
+    userId: string,
+    opsi: { maksShift?: number } = {},
+  ): Promise<{
+    bolehLihatShiftLama: boolean;
+    shift: Array<{ id: string; namaShift: string; dibukaPada: string; ditutupPada: string | null; status: string }>;
+    pesanan: CashierOrderDTO[];
+  }> {
+    const cafe = await prisma.cafe.findUnique({
+      where: { id: cafeId },
+      select: { kasirLihatRiwayat: true },
+    });
+    const bolehLihatShiftLama = cafe?.kasirLihatRiwayat ?? true;
+
+    // Kasir yang tidak diizinkan melihat riwayat lama hanya mendapat shift yang
+    // sedang berjalan — bukan daftar kosong, yang akan terbaca seolah ia belum
+    // menjual apa pun hari ini.
+    const ambil = bolehLihatShiftLama ? Math.min(Math.max(opsi.maksShift ?? 5, 1), 20) : 1;
+
+    const shift = await prisma.cashierShift.findMany({
+      where: { cafeId, userId },
+      orderBy: { dibukaPada: 'desc' },
+      take: ambil,
+      select: {
+        id: true,
+        namaShift: true,
+        dibukaPada: true,
+        ditutupPada: true,
+        status: true,
+      },
+    });
+
+    if (shift.length === 0) {
+      return { bolehLihatShiftLama, shift: [], pesanan: [] };
+    }
+
+    const pesanan = await prisma.order.findMany({
+      where: { cafeId, cashierShiftId: { in: shift.map((s) => s.id) } },
+      include: ORDER_INCLUDE,
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+
+    return {
+      bolehLihatShiftLama,
+      shift: shift.map((s) => ({
+        id: s.id,
+        namaShift: s.namaShift,
+        dibukaPada: s.dibukaPada.toISOString(),
+        ditutupPada: s.ditutupPada?.toISOString() ?? null,
+        status: normalisasiStatusShift(s.status),
+      })),
+      pesanan: pesanan.map((p) => toCashierOrderDTO(p as never)),
+    };
   },
 };

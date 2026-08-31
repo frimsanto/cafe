@@ -22,9 +22,10 @@ import DashboardPage from './pages/DashboardPage';
 import CafeMenuPage from './pages/CafeMenuPage';
 import MenuManagementPage from './pages/MenuManagementPage';
 import TableManagementPage from './pages/TableManagementPage';
-import CashierPage from './pages/CashierPage';
+import PosPage from './pages/PosPage';
 import PaymentSettingsPage from './pages/PaymentSettingsPage';
 import StaffManagementPage from './pages/StaffManagementPage';
+import JadwalPage from './pages/JadwalPage';
 import PembayaranStatusPage from './pages/PembayaranStatusPage';
 
 /**
@@ -186,19 +187,25 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
-              <Route
-                path="/kasir"
-                element={
-                  <ProtectedRoute allow={['KASIR', 'OWNER']}>
-                    <CashierPage />
-                  </ProtectedRoute>
-                }
-              />
+              {/* Layar kasir. TIDAK dibungkus ProtectedRoute: terminal POS
+                  diautentikasi perangkat + PIN, bukan login staf — dan sebuah
+                  tablet yang tidak pernah login harus tetap bisa dipakai
+                  bekerja. Staf yang memang login mendapat jalur keduanya di
+                  dalam PosPage. */}
+              <Route path="/kasir" element={<PosPage />} />
               <Route
                 path="/dasbor/staf"
                 element={
                   <ProtectedRoute allow={['OWNER']}>
                     <StaffManagementPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dasbor/jadwal"
+                element={
+                  <ProtectedRoute allow={['OWNER']}>
+                    <JadwalPage />
                   </ProtectedRoute>
                 }
               />

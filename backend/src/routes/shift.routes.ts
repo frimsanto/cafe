@@ -9,7 +9,7 @@ import { rentangHariOperasional, zonaAman } from '../lib/waktuKafe';
 import { prisma } from '../lib/prisma';
 import { jadwalService } from '../services/jadwal.service';
 import { absensiService } from '../services/absensi.service';
-import { shiftKasirService } from '../services/shiftKasir.service';
+import { riwayatKasirService, shiftKasirService } from '../services/shiftKasir.service';
 import { penggantianService } from '../services/penggantian.service';
 import { fotoAbsensiService } from '../services/fotoAbsensi.service';
 import { aktorDariRequest } from '../services/auditLog.service';
@@ -480,5 +480,74 @@ shiftRouter.post(
       aktorDariRequest(req),
     );
     res.json({ data });
+  }),
+);
+
+// ══ MILIK SAYA (POS) ════════════════════════════════════════════════════════
+//
+// Tiga endpoint yang menjawab pertanyaan seorang kasir tentang DIRINYA:
+// jadwalku, absensiku, transaksiku. Semuanya memakai sesi POS, sehingga
+// `userId`-nya berasal dari PIN yang sudah dibuktikan — bukan dari parameter
+// yang bisa diganti menjadi id rekan sebelah.
+
+// GET /api/pos/jadwal-saya?dari=&sampai=
+shiftRouter.get(
+  '/pos/jadwal-saya',
+  posAkses,
+  asyncHandler(async (req, res) => {
+    const sesi = req.sesiKasir!;
+    const { dari, sampai } = parseRentangTanggal(req.query as Record<string, unknown>);
+    const data = await jadwalService.daftar(sesi.cafeId, dari, sampai, {
+      userId: sesi.userId,
+    });
+    res.json({ data });
+  }),
+);
+
+// GET /api/pos/absensi-saya?dari=&sampai=
+shiftRouter.get(
+  '/pos/absensi-saya',
+  posAkses,
+  asyncHandler(async (req, res) => {
+    const sesi = req.sesiKasir!;
+    const { dari, sampai } = parseRentangTanggal(req.query as Record<string, unknown>);
+    const rentang = await rentangKafe(sesi.cafeId, dari, sampai);
+    const data = await absensiService.daftar(sesi.cafeId, rentang.mulai, rentang.selesai, {
+      userId: sesi.userId,
+    });
+    res.json({ data });
+  }),
+);
+
+// GET /api/pos/riwayat-saya — transaksi yang DIPROSES kasir ini.
+//
+// Bagian K: kasir tidak pernah melihat omzet kafe, transaksi kasir lain, atau
+// selisih kas siapa pun selain dirinya.
+shiftRouter.get(
+  '/pos/riwayat-saya',
+  posAkses,
+  asyncHandler(async (req, res) => {
+    const sesi = req.sesiKasir!;
+    const data = await riwayatKasirService.milikSaya(sesi.cafeId, sesi.userId);
+    res.json({ data });
+  }),
+);
+
+// GET /api/pos/shift-saya — daftar shift kasir ini (untuk layar "Shift Saya").
+shiftRouter.get(
+  '/pos/shift-saya/:id',
+  posAkses,
+  asyncHandler(async (req, res) => {
+    const sesi = req.sesiKasir!;
+    const shift = await shiftKasirService.ambil(
+      sesi.cafeId,
+      idDariUrl(req.params.id, 'Shift'),
+    );
+    // Kasir hanya boleh membaca shiftnya SENDIRI — tanpa ini, siapa pun yang
+    // memegang terminal bisa membaca rekap dan selisih kas rekannya.
+    if (shift.kasir.id !== sesi.userId) {
+      throw ApiError.notFound('Shift tidak ditemukan');
+    }
+    res.json({ data: shift });
   }),
 );
