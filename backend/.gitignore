@@ -8,3 +8,7 @@ dist
 
 # Prisma
 prisma/*.db
+
+# Penyimpanan foto absensi (pengembangan). Di produksi ATTENDANCE_PHOTO_DIR
+# menunjuk ke direktori privat DI LUAR folder ini.
+penyimpanan/

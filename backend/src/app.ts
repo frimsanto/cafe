@@ -3,6 +3,7 @@ import cors from 'cors';
 import { prisma } from './lib/prisma';
 import { apiRouter } from './routes';
 import { errorHandler, notFoundHandler } from './middleware/error';
+import { daftarOriginDiizinkan } from './lib/konfigurasi';
 
 /**
  * Membuat instance aplikasi Express.
@@ -13,20 +14,33 @@ export function createApp() {
   const app = express();
 
   // CORS dengan `credentials`, supaya cookie HttpOnly milik terminal POS ikut
-  // terkirim (lihat `lib/cookie.ts`). `origin: true` MEMANTULKAN origin
-  // pemanggil alih-alih `*` — keduanya tidak boleh digabung dengan credentials.
+  // terkirim (lihat `lib/cookie.ts`).
   //
-  // Yang menjaga terhadap CSRF di sini BUKAN daftar origin ini, melainkan
-  // `SameSite: 'strict'` pada cookienya: browser tidak akan pernah menyertakan
-  // cookie POS pada permintaan yang berasal dari situs lain, apa pun yang
-  // dikatakan header CORS. Itu penting karena origin frontend CafeOS berbeda
-  // antara produksi, pengembangan, dan tiap perangkat yang dipakai menguji —
-  // daftar yang harus dijaga tetap akurat akan menjadi sumber kegagalan
-  // tersendiri, dengan gejala yang menyesatkan.
+  // Origin-nya DAFTAR EKSPLISIT, bukan pantulan. `origin: true` memantulkan
+  // siapa pun yang bertanya, dan digabung dengan `credentials: true` artinya
+  // setiap situs boleh memanggil API ini dengan cookie pengguna terbawa —
+  // menyandarkan seluruh pertahanan pada `SameSite=Strict` saja.
   //
-  // Endpoint publik pelanggan (menu QR, status pesanan) tidak membawa cookie
-  // apa pun, jadi perilakunya tidak berubah oleh perubahan ini.
-  app.use(cors({ origin: true, credentials: true }));
+  // Permintaan tanpa `Origin` tetap diterima: itu bukan lintas-situs dari
+  // peramban melainkan webhook gateway, health check, dan `curl` — yang tidak
+  // pernah membawa cookie siapa pun. Menolaknya akan mematikan notifikasi
+  // pembayaran.
+  const originDiizinkan = daftarOriginDiizinkan();
+  app.use(
+    cors({
+      origin(origin, cb) {
+        if (!origin || originDiizinkan.includes(origin)) {
+          cb(null, true);
+          return;
+        }
+        // `false`, bukan Error: origin yang tidak diizinkan cukup tidak
+        // mendapat header CORS (peramban yang menolaknya), alih-alih membuat
+        // seluruh permintaan berakhir 500 di log kami.
+        cb(null, false);
+      },
+      credentials: true,
+    }),
+  );
   // Simpan body MENTAH di samping hasil parse. Webhook DOKU menandatangani
   // digest SHA-256 atas byte yang dikirimnya; menyusun ulang JSON dari objek
   // hasil parse menghasilkan byte berbeda (spasi/urutan kunci) dan akan membuat

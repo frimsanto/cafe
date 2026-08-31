@@ -4,6 +4,7 @@ import path from 'node:path';
 import { prisma } from '../lib/prisma';
 import { ApiError } from '../lib/ApiError';
 import { adalahJpeg, bersihkanJpeg, tebakFormat } from '../lib/jpeg';
+import { direktoriFoto } from '../lib/konfigurasi';
 import type { JenisFoto } from '../lib/shiftStatus';
 
 /**
@@ -41,16 +42,10 @@ import type { JenisFoto } from '../lib/shiftStatus';
  * endpoint ini.
  */
 
-/**
- * Akar penyimpanan. Di luar `dist/` dan di luar apa pun yang disajikan statis.
- *
- * Bisa diarahkan lewat `ATTENDANCE_PHOTO_DIR` supaya di VPS ia bisa diletakkan
- * pada volume yang ikut dicadangkan — foto absensi adalah bukti kehadiran, dan
- * kehilangannya bukan sekadar kehilangan gambar.
- */
-const AKAR = process.env.ATTENDANCE_PHOTO_DIR
-  ? path.resolve(process.env.ATTENDANCE_PHOTO_DIR)
-  : path.resolve(process.cwd(), 'penyimpanan', 'absensi');
+// Akar penyimpanannya ditentukan `lib/konfigurasi.ts` (`ATTENDANCE_PHOTO_DIR`),
+// diperiksa saat boot, dan berada di luar `dist/` maupun apa pun yang disajikan
+// statis. Dibaca dari sana — bukan dihitung ulang di sini — supaya jalur yang
+// dipakai MENULIS persis sama dengan yang sudah divalidasi saat proses menyala.
 
 /** Batas ukuran SETELAH dibersihkan. */
 const MAKS_BYTE = 2 * 1024 * 1024;
@@ -77,12 +72,12 @@ const AMBANG_TERLAMBAT_MS = 5 * 60 * 1000;
  * klien yang ikut dirangkai.
  */
 function jalurBerkas(cafeId: string, namaBerkas: string): string {
-  const jalur = path.join(AKAR, cafeId, namaBerkas);
+  const jalur = path.join(direktoriFoto(), cafeId, namaBerkas);
 
   // Sabuk pengaman kedua: hasil akhirnya wajib berada di bawah akar. Kalau
   // suatu saat ada pemanggil yang meneruskan nilai dari luar, ia berhenti di
   // sini alih-alih menulis ke tempat lain di server.
-  const akarKafe = path.join(AKAR, cafeId) + path.sep;
+  const akarKafe = path.join(direktoriFoto(), cafeId) + path.sep;
   if (!jalur.startsWith(akarKafe)) {
     throw ApiError.internal('Jalur berkas foto tidak sah');
   }

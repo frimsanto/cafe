@@ -4,6 +4,7 @@ import { COOKIE_PERANGKAT, COOKIE_SESI_KASIR, bacaCookie, hapusCookieSesi } from
 import { verifySesiKasir } from '../lib/jwt';
 import { runWithTenant } from '../lib/tenantContext';
 import { deviceService } from '../services/device.service';
+import { tolakLintasSitus } from './csrf';
 
 /**
  * Autentikasi perangkat POS & sesi kasir.
@@ -113,5 +114,15 @@ export function requireSesiKasir(req: Request, res: Response, next: NextFunction
   runWithTenant(perangkat.cafeId, next);
 }
 
+/**
+ * Rantai untuk endpoint POS yang hanya butuh perangkat terdaftar — layar
+ * pemasangan dan layar pergantian petugas.
+ *
+ * `tolakLintasSitus` DULU, sebelum apa pun menyentuh database: permintaan dari
+ * origin asing tidak perlu sampai ke pencarian perangkat, apalagi ke
+ * pencocokan PIN yang menghabiskan waktu bcrypt.
+ */
+export const perangkatAccess = [tolakLintasSitus, requirePerangkat];
+
 /** Rantai lengkap untuk endpoint POS yang menyentuh uang. */
-export const posAccess = [requirePerangkat, requireSesiKasir];
+export const posAccess = [tolakLintasSitus, requirePerangkat, requireSesiKasir];

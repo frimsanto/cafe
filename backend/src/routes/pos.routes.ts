@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { rateLimit } from '../middleware/rateLimit';
-import { requirePerangkat, requireSesiKasir } from '../middleware/perangkat';
+import { perangkatAccess, posAccess } from '../middleware/perangkat';
 import {
   hapusCookieSesi,
   pasangCookiePerangkat,
@@ -45,7 +45,7 @@ const batasPin = rateLimit({
 // dibaca JavaScript, dan header itu tidak pernah dikirim lagi.
 posRouter.post(
   '/pos/pasang',
-  requirePerangkat,
+  perangkatAccess,
   asyncHandler(async (req, res) => {
     const dariHeader = req.headers['x-device-token'];
     const token = typeof dariHeader === 'string' ? dariHeader.trim() : null;
@@ -73,7 +73,7 @@ posRouter.post(
 // PIN tidak punya urusan di sana.
 posRouter.get(
   '/pos/petugas',
-  requirePerangkat,
+  perangkatAccess,
   asyncHandler(async (req, res) => {
     const data = await stafService.untukLayarPergantian(req.perangkat!.cafeId);
     res.json({ data });
@@ -83,7 +83,7 @@ posRouter.get(
 // POST /api/pos/sesi — buka sesi kasir dengan PIN.
 posRouter.post(
   '/pos/sesi',
-  requirePerangkat,
+  perangkatAccess,
   batasPin,
   asyncHandler(async (req, res) => {
     const input = parseBukaSesi(req.body);
@@ -103,8 +103,7 @@ posRouter.post(
 // GET /api/pos/sesi — siapa yang sedang memegang terminal ini.
 posRouter.get(
   '/pos/sesi',
-  requirePerangkat,
-  requireSesiKasir,
+  posAccess,
   asyncHandler(async (req, res) => {
     const sesi = await sesiKasirService.muat(
       req.sesiKasir!.cafeId,
@@ -127,8 +126,7 @@ posRouter.get(
 // samping dari menekan tombol ini.
 posRouter.delete(
   '/pos/sesi',
-  requirePerangkat,
-  requireSesiKasir,
+  posAccess,
   asyncHandler(async (req, res) => {
     await sesiKasirService.kunci(
       req.sesiKasir!.cafeId,

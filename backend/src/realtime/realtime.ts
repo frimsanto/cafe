@@ -1,6 +1,7 @@
 import type { IncomingMessage, Server } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { OrderDTO, OrderWithTableDTO } from '../dto/order.dto';
+import { originDiizinkan } from '../lib/konfigurasi';
 
 // Mekanisme realtime berbasis WebSocket native (library `ws`) — bukan Socket.io
 // / Supabase. Klien (Layar Dapur, HP pelanggan) berlangganan channel per kafe
@@ -42,10 +43,36 @@ class Realtime {
   private meta = new WeakMap<WebSocket, WsData>();
   private heartbeat: NodeJS.Timeout | null = null;
 
-  /** Pasang WS server pada HTTP server Express (berbagi port yang sama). */
+  /**
+   * Pasang WS server pada HTTP server Express (berbagi port yang sama).
+   *
+   * ── Kenapa WebSocket butuh pemeriksaan Origin sendiri ──
+   *
+   * CORS TIDAK BERLAKU pada WebSocket. Peramban mengirim header `Origin` saat
+   * membuka koneksi, tapi tidak ada satu pun aturan yang menghentikannya bila
+   * server diam saja — sehingga halaman mana pun di internet bisa membuka
+   * `ws://…/ws?cafeId=<id>` dan ikut mendengarkan aliran pesanan sebuah kafe.
+   * Itu kebocoran yang nyata: kanal kafe membawa rincian pesanan dan angka
+   * omzet yang dibaca layar dasbor.
+   *
+   * `verifyClient` menutupnya dengan daftar yang sama seperti CORS. Koneksi
+   * tanpa `Origin` tetap diterima — itu klien non-peramban (uji, skrip
+   * operator), yang tidak punya cookie siapa pun untuk disalahgunakan.
+   */
   init(server: Server): void {
     if (this.wss) return;
-    const wss = new WebSocketServer({ server, path: '/ws' });
+    const wss = new WebSocketServer({
+      server,
+      path: '/ws',
+      verifyClient: ({ origin }, cb) => {
+        if (originDiizinkan(origin)) {
+          cb(true);
+          return;
+        }
+        console.warn('[realtime] koneksi ditolak dari origin tak dikenal');
+        cb(false, 403, 'Origin tidak diizinkan');
+      },
+    });
     this.wss = wss;
 
     wss.on('connection', (ws, req) => {

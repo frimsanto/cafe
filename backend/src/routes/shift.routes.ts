@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { attachUser, requireAuth, requireRole } from '../middleware/auth';
 import { tenantScope } from '../middleware/tenant';
-import { requirePerangkat, requireSesiKasir } from '../middleware/perangkat';
+import { posAccess } from '../middleware/perangkat';
 import { uploadSingle } from '../middleware/upload';
 import { ApiError } from '../lib/ApiError';
 import { rentangHariOperasional, zonaAman } from '../lib/waktuKafe';
@@ -46,7 +46,7 @@ export const shiftRouter = Router();
  * ditutup. Koreksi hanya lewat jalur pemilik, dan wajib beralasan.
  */
 const pemilikSaja = [requireAuth, requireRole('OWNER'), attachUser, tenantScope];
-const posAkses = [requirePerangkat, requireSesiKasir];
+const posAkses = posAccess;
 
 const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
