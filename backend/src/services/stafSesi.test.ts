@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buatPrismaMock, isiBawaan, type PrismaMock } from '../test/prismaMock';
+import { ApiError } from '../lib/ApiError';
 
 const prisma: PrismaMock = buatPrismaMock();
 vi.mock('../lib/prisma', () => ({ prisma }));
@@ -284,30 +285,115 @@ describe('staf — PIN', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('perangkat POS', () => {
-  it('menyimpan hash token, bukan tokennya', async () => {
+  it('menyimpan hash KODE, dan belum punya token sama sekali', async () => {
     prisma.cashierDevice.create.mockResolvedValue(perangkatPalsu());
 
-    const { token } = await deviceService.daftarkan(CAFE, 'Kasir Depan', AKTOR);
+    const { kode } = await deviceService.daftarkan(CAFE, 'Kasir Depan', AKTOR);
 
     const data = prisma.cashierDevice.create.mock.calls[0][0].data;
-    expect(data.tokenHash).toBeTypeOf('string');
-    expect(data.tokenHash).not.toBe(token);
-    expect(data.tokenHash).not.toContain(token);
-    // Token yang dikembalikan harus benar-benar acak & panjang.
-    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    // Terminal LAHIR TANPA TOKEN: tokennya baru terbit saat kodenya ditukar di
+    // perangkat yang bersangkutan.
+    expect(data.tokenHash).toBeNull();
+    expect(data.kodeHash).toBeTypeOf('string');
+    expect(data.kodeHash).not.toBe(kode);
+    expect(data.kodeHash).not.toContain(kode);
+    expect(data.kodeBerlakuHingga).toBeInstanceOf(Date);
+    // Bentuk yang bisa dibaca & diucapkan manusia — itu seluruh alasannya ada.
+    expect(kode).toMatch(/^KSR-[0-9A-Z]{4}-[0-9A-Z]{4}$/);
   });
 
-  it('tidak pernah menuliskan token perangkat ke audit log', async () => {
+  it('tidak pernah menuliskan kode pemasangan ke audit log', async () => {
     prisma.cashierDevice.create.mockResolvedValue(perangkatPalsu());
-    const { token } = await deviceService.daftarkan(CAFE, 'Kasir Depan', AKTOR);
-    expect(JSON.stringify(catat.mock.calls)).not.toContain(token);
+    const { kode } = await deviceService.daftarkan(CAFE, 'Kasir Depan', AKTOR);
+    expect(JSON.stringify(catat.mock.calls)).not.toContain(kode);
   });
 
-  it('menerbitkan token berbeda pada setiap pendaftaran', async () => {
+  it('menerbitkan kode berbeda pada setiap pendaftaran', async () => {
     prisma.cashierDevice.create.mockResolvedValue(perangkatPalsu());
     const a = await deviceService.daftarkan(CAFE, 'A', AKTOR);
     const b = await deviceService.daftarkan(CAFE, 'B', AKTOR);
-    expect(a.token).not.toBe(b.token);
+    expect(a.kode).not.toBe(b.kode);
+  });
+
+  /**
+   * Penukaran kode adalah SATU-SATUNYA tempat token perangkat lahir, dan
+   * sekali-pakainya yang membuat kode 40-bit ini memadai.
+   */
+  it('menukar kode dengan token, lalu melumpuhkan kodenya', async () => {
+    const perangkat = perangkatPalsu({
+      tokenHash: null,
+      kodeDipakaiPada: null,
+      kodeBerlakuHingga: new Date(Date.now() + 10 * 60_000),
+    });
+    prisma.cashierDevice.findUnique.mockResolvedValue(perangkat);
+    prisma.cashierDevice.update.mockResolvedValue(perangkat);
+
+    const { token } = await deviceService.tukarKode('KSR-ABCD-2345');
+
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    const data = prisma.cashierDevice.update.mock.calls[0][0].data;
+    expect(data.tokenHash).toBeTypeOf('string');
+    expect(data.tokenHash).not.toBe(token);
+    // Dikosongkan, bukan sekadar ditandai: baris yang tidak lagi memuat hash
+    // kode tidak bisa dicocokkan percobaan kedua mana pun.
+    expect(data.kodeHash).toBeNull();
+    expect(data.kodeDipakaiPada).toBeInstanceOf(Date);
+    expect(data.terpasangPada).toBeInstanceOf(Date);
+  });
+
+  it('memaafkan salah ketik yang sudah diketahui bentuknya (O/0, I/1)', async () => {
+    const perangkat = perangkatPalsu({
+      tokenHash: null,
+      kodeDipakaiPada: null,
+      kodeBerlakuHingga: new Date(Date.now() + 10 * 60_000),
+    });
+    prisma.cashierDevice.findUnique.mockResolvedValue(perangkat);
+    prisma.cashierDevice.update.mockResolvedValue(perangkat);
+
+    // Diketik dengan huruf O dan I, spasi, huruf kecil, tanpa awalan.
+    await deviceService.tukarKode(' abcd 2345 ');
+    const dicari = prisma.cashierDevice.findUnique.mock.calls[0][0].where.kodeHash;
+
+    prisma.cashierDevice.findUnique.mockClear();
+    await deviceService.tukarKode('KSR-ABCD-2345');
+    expect(prisma.cashierDevice.findUnique.mock.calls[0][0].where.kodeHash).toBe(dicari);
+  });
+
+  it('menolak bentuk kode yang salah tanpa menyentuh database', async () => {
+    await expect(deviceService.tukarKode('bukan-kode')).rejects.toThrow(ApiError);
+    expect(prisma.cashierDevice.findUnique).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Empat sebab penolakan, SATU pesan. Membedakannya memberi tahu penebak bahwa
+   * tebakannya "hampir benar" — satu-satunya keterangan yang berguna baginya.
+   */
+  it('menolak kode terpakai, kedaluwarsa, dan terminal yang dicabut dengan pesan sama', async () => {
+    const dasar = {
+      tokenHash: null,
+      kodeDipakaiPada: null,
+      kodeBerlakuHingga: new Date(Date.now() + 10 * 60_000),
+    };
+    const kasus = [
+      { ...dasar, kodeDipakaiPada: new Date() },
+      { ...dasar, kodeBerlakuHingga: new Date(Date.now() - 1000) },
+      { ...dasar, aktif: false, dicabutPada: new Date() },
+    ];
+
+    const pesan = new Set<string>();
+    for (const ubah of kasus) {
+      prisma.cashierDevice.findUnique.mockResolvedValue(perangkatPalsu(ubah));
+      await deviceService.tukarKode('KSR-ABCD-2345').catch((err: ApiError) => {
+        pesan.add(err.message);
+      });
+    }
+    // Kode yang sama sekali tidak ada pun harus terdengar sama.
+    prisma.cashierDevice.findUnique.mockResolvedValue(null);
+    await deviceService.tukarKode('KSR-ABCD-2345').catch((err: ApiError) => {
+      pesan.add(err.message);
+    });
+
+    expect(pesan.size).toBe(1);
   });
 
   it('menolak token yang tidak dikenal', async () => {

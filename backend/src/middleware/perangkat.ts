@@ -33,12 +33,15 @@ import { tolakLintasSitus } from './csrf';
 /**
  * Wajib membawa token perangkat yang sah.
  *
- * Token dibaca dari cookie HttpOnly. Header `x-device-token` ikut diterima
- * HANYA sebagai jalur pemasangan pertama kali: sebuah terminal yang baru
- * didaftarkan menukar tokennya dengan cookie lewat endpoint pairing, dan
- * sesudah itu tidak pernah mengirim header ini lagi. Header dipertahankan
- * karena tanpa itu tidak ada cara memasang cookie pertama pada perangkat yang
- * menerima tokennya lewat pemindaian QR.
+ * Token dibaca HANYA dari cookie HttpOnly. Header `x-device-token` dulu ikut
+ * diterima sebagai jalur pemasangan pertama — itu sudah tidak ada lagi:
+ * pemasangan sekarang menukar sebuah KODE pendek di `/api/pos/pasang`, dan
+ * tokennya lahir di server lalu langsung menjadi cookie tanpa pernah melewati
+ * peramban sebagai nilai yang bisa dibaca.
+ *
+ * Menghapus penerimaan header itu menutup satu jalan masuk: selama ia ada,
+ * siapa pun yang memegang token perangkat curian bisa memakainya langsung dari
+ * `curl`, tanpa perlu cookie dan tanpa tersandung `SameSite=Strict`.
  */
 export async function requirePerangkat(
   req: Request,
@@ -46,12 +49,7 @@ export async function requirePerangkat(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const dariCookie = bacaCookie(req, COOKIE_PERANGKAT);
-    const dariHeader = req.headers['x-device-token'];
-    const token =
-      dariCookie ?? (typeof dariHeader === 'string' ? dariHeader.trim() : null);
-
-    const perangkat = await deviceService.dariToken(token);
+    const perangkat = await deviceService.dariToken(bacaCookie(req, COOKIE_PERANGKAT));
     if (!perangkat) {
       // Satu pesan untuk token tidak dikenal MAUPUN perangkat yang dicabut —
       // pemegang token yang dicabut tidak perlu tahu bahwa tokennya pernah sah.

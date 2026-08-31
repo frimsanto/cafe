@@ -7,23 +7,28 @@ import { describeApiError } from '../../lib/apiClient';
  *
  * Muncul ketika peramban ini belum punya cookie perangkat yang sah — terminal
  * baru, cookie terhapus, atau perangkat yang dicabut pemilik. Ketiganya sengaja
- * TIDAK dibedakan di layar: memberi tahu pemegang token yang dicabut bahwa
- * tokennya "pernah sah" tidak menolong siapa pun kecuali dirinya.
+ * TIDAK dibedakan di layar: memberi tahu pemegang kredensial yang dicabut bahwa
+ * miliknya "pernah sah" tidak menolong siapa pun kecuali dirinya.
  *
- * Tokennya diketik/ditempel sekali, lalu ditukar dengan cookie HttpOnly yang
- * tidak bisa dibaca JavaScript. Sesudah itu tidak ada tempat di aplikasi ini
- * yang memegang token perangkat — termasuk kode kita sendiri.
+ * ── Yang diketik di sini adalah KODE, bukan token ──
+ *
+ * Sebelumnya layar ini meminta token 64 heksadesimal, dan itu tidak pernah
+ * berhasil sekalipun di produksi: tidak ada manusia yang bisa membawa 64
+ * karakter acak dari layar pemilik ke tablet kasir tanpa salah. Kode pemasangan
+ * pendek, berjarak, dan memaafkan tiga salah ketik klasik (O↔0, I↔1, L↔1) —
+ * server yang menormalkannya, jadi mengetik `O` saat layar menampilkan `0`
+ * tetap berhasil.
  */
 export default function PosPairingScreen() {
   const { pasang, galat: galatKonteks } = usePos();
-  const [token, setToken] = useState('');
+  const [kode, setKode] = useState('');
   const [sibuk, setSibuk] = useState(false);
   const [galat, setGalat] = useState<string | null>(null);
 
   const kirim = async () => {
-    const bersih = token.trim();
+    const bersih = kode.trim();
     if (bersih === '') {
-      setGalat('Tempelkan token terminal dari halaman Manajemen Staf.');
+      setGalat('Masukkan kode pemasangan dari halaman Manajemen Staf.');
       return;
     }
     setSibuk(true);
@@ -31,7 +36,7 @@ export default function PosPairingScreen() {
     try {
       await pasang(bersih);
     } catch (err) {
-      setGalat(describeApiError(err, 'Token terminal tidak dikenali.'));
+      setGalat(describeApiError(err, 'Kode pemasangan tidak dikenali.'));
     } finally {
       setSibuk(false);
     }
@@ -44,23 +49,35 @@ export default function PosPairingScreen() {
         <p className="mt-1.5 text-sm text-warm-muted">
           Perangkat ini belum dikenali sebagai terminal kasir. Mintalah pemilik
           membuka <strong>Manajemen Staf → Terminal POS</strong>, mendaftarkan
-          terminal baru, lalu menyalin tokennya ke sini.
+          terminal, lalu membacakan kode pemasangannya.
         </p>
 
         <label className="mt-5 block">
           <span className="mb-1 block text-xs font-medium text-warm-muted">
-            Token terminal
+            Kode pemasangan
           </span>
           <input
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
+            value={kode}
+            onChange={(e) => setKode(e.target.value.toUpperCase())}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !sibuk) void kirim();
+            }}
             autoFocus
             autoComplete="off"
+            autoCapitalize="characters"
             spellCheck={false}
-            placeholder="Tempelkan token di sini"
-            className="w-full rounded-xl border border-warm-line bg-white px-3 py-2.5 font-mono text-sm text-warm-espresso outline-none focus:border-warm-amber"
+            // `inputMode` bukan `type="number"`: kodenya memuat huruf, dan
+            // tablet kasir harus memunculkan papan ketik yang memuat keduanya.
+            inputMode="text"
+            placeholder="KSR-XXXX-XXXX"
+            className="w-full rounded-xl border border-warm-line bg-white px-3 py-3 text-center font-mono text-xl tracking-[0.2em] text-warm-espresso outline-none focus:border-warm-amber"
           />
         </label>
+
+        <p className="mt-1.5 text-xs text-warm-muted">
+          Tanda hubung boleh ikut diketik atau tidak. Kode berlaku 15 menit dan
+          hanya sekali pakai.
+        </p>
 
         {(galat ?? galatKonteks) && (
           <p role="alert" className="mt-2 text-sm font-medium text-warm-danger">
@@ -72,16 +89,10 @@ export default function PosPairingScreen() {
           type="button"
           onClick={() => void kirim()}
           disabled={sibuk}
-          className="mt-4 w-full rounded-xl bg-warm-amber px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 disabled:opacity-50"
+          className="mt-4 w-full rounded-xl bg-warm-espresso px-4 py-3 text-sm font-semibold text-warm-cream transition hover:opacity-90 disabled:opacity-50"
         >
           {sibuk ? 'Memasang…' : 'Pasang Terminal'}
         </button>
-
-        <p className="mt-4 rounded-xl bg-warm-line/30 px-3 py-2 text-xs text-warm-muted">
-          Token hanya diketik sekali. Sesudah terpasang ia tersimpan sebagai
-          cookie yang tidak bisa dibaca halaman mana pun, dan tidak akan diminta
-          lagi kecuali pemilik mencabut terminal ini.
-        </p>
       </div>
     </div>
   );

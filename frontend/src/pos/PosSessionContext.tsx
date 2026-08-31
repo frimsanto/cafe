@@ -53,7 +53,8 @@ interface NilaiPos {
   galat: string | null;
 
   /** Pasang terminal dengan token dari pemilik. */
-  pasang: (token: string) => Promise<void>;
+  /** Tukar kode pemasangan dengan cookie perangkat. */
+  pasang: (kode: string) => Promise<void>;
   /** Buka sesi dengan PIN. */
   masuk: (userId: string, pin: string) => Promise<void>;
   /** "Ganti Petugas" — kunci sesi, shift dibiarkan berjalan. */
@@ -158,8 +159,8 @@ export function PosSessionProvider({ children }: { children: ReactNode }) {
   }, [tentukan]);
 
   const pasang = useCallback(
-    async (token: string) => {
-      const status = await posApi.pasang(token.trim());
+    async (kode: string) => {
+      const status = await posApi.pasang(kode.trim());
       if (!hidup.current) return;
       setPerangkat(status);
       setKeadaan('TERKUNCI');

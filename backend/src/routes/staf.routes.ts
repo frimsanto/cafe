@@ -10,6 +10,7 @@ import {
   parseStafAktif,
   parseStafBaru,
   parseStafUbah,
+  parseLabelPerangkat,
 } from '../validation/staf.validation';
 import { ApiError } from '../lib/ApiError';
 
@@ -179,22 +180,37 @@ stafRouter.get(
 
 // POST /api/perangkat — daftarkan terminal baru.
 //
-// Ini SATU-SATUNYA tempat token perangkat pernah terlihat. Tidak ada endpoint
-// yang bisa mengeluarkannya lagi; kalau hilang, cabut lalu daftarkan ulang.
+// Yang dikembalikan adalah KODE PEMASANGAN berumur pendek, bukan token. Token
+// perangkat lahir kelak di `/api/pos/pasang`, di tablet yang bersangkutan, dan
+// tidak pernah terlihat manusia mana pun — termasuk pemilik kafe.
 stafRouter.post(
   '/perangkat',
   pemilikSaja,
   asyncHandler(async (req, res) => {
-    const body = req.body as Record<string, unknown>;
-    const label = typeof body?.label === 'string' ? body.label.trim() : '';
-    if (label === '') throw ApiError.badRequest('Nama terminal wajib diisi');
-
     const data = await deviceService.daftarkan(
       req.auth!.cafeId,
-      label.slice(0, 100),
+      parseLabelPerangkat((req.body as Record<string, unknown>)?.label),
       aktorDariRequest(req),
     );
     res.status(201).json({ data });
+  }),
+);
+
+// POST /api/perangkat/:id/kode — terbitkan ulang kode pemasangan.
+//
+// Kode berumur 15 menit, dan pemilik yang terlambat berjalan ke terminalnya
+// tidak boleh dipaksa mencabut lalu mendaftarkan ulang: pencabutan memutus
+// riwayat shift terminal itu, sedangkan yang basi cuma selembar kode.
+stafRouter.post(
+  '/perangkat/:id/kode',
+  pemilikSaja,
+  asyncHandler(async (req, res) => {
+    const data = await deviceService.terbitkanKode(
+      req.auth!.cafeId,
+      idDariUrl(req.params.id, 'Perangkat'),
+      aktorDariRequest(req),
+    );
+    res.json({ data });
   }),
 );
 

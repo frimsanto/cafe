@@ -12,6 +12,8 @@ import { sesiKasirService } from '../services/sesiKasir.service';
 import { stafService } from '../services/staf.service';
 import { aktorDariRequest } from '../services/auditLog.service';
 import { parseBukaSesi } from '../validation/staf.validation';
+import { deviceService } from '../services/device.service';
+import { tolakLintasSitus } from '../middleware/csrf';
 
 export const posRouter = Router();
 
@@ -38,23 +40,62 @@ const batasPin = rateLimit({
   pesan: 'Terlalu banyak percobaan dari perangkat ini. Tunggu sebentar.',
 });
 
-// POST /api/pos/pasang — tukar token perangkat dengan cookie HttpOnly.
+/**
+ * Batas laju penukaran kode pemasangan, per alamat IP.
+ *
+ * Kodenya 40 bit — ruang tebakan yang besar, tapi bukan tak terbatas. Yang
+ * membuatnya memadai adalah tiga hal bersama: sekali pakai, berumur 15 menit,
+ * dan batas ini. Tanpa yang terakhir, sebuah skrip bisa mencoba ribuan kode
+ * dalam jendela 15 menit itu.
+ */
+const batasPasang = rateLimit({
+  maks: 10,
+  jendelaMs: 10 * 60_000,
+  pesan: 'Terlalu banyak percobaan kode. Tunggu beberapa menit lalu coba lagi.',
+});
+
+// POST /api/pos/pasang — tukar KODE PEMASANGAN dengan cookie HttpOnly.
 //
-// Dipanggil SEKALI oleh terminal yang baru didaftarkan, membawa tokennya di
-// header `x-device-token`. Sesudah ini tokennya hidup di cookie yang tidak bisa
-// dibaca JavaScript, dan header itu tidak pernah dikirim lagi.
+// Dipanggil sekali oleh terminal baru, membawa kode pendek yang dibaca pemilik
+// dari layar Manajemen Staf. Tokennya lahir di server pada permintaan ini,
+// langsung menjadi cookie, dan tidak pernah dikembalikan ke JavaScript —
+// termasuk kode kami sendiri.
+//
+// TIDAK memakai `perangkatAccess`: yang memanggil ini justru perangkat yang
+// BELUM punya kredensial apa pun. Yang menjaganya `tolakLintasSitus` (CSRF) dan
+// batas laju di atas.
 posRouter.post(
   '/pos/pasang',
+  tolakLintasSitus,
+  batasPasang,
+  asyncHandler(async (req, res) => {
+    const body = (req.body ?? {}) as { kode?: unknown };
+    if (typeof body.kode !== 'string' || body.kode.trim() === '') {
+      throw ApiError.badRequest('Kode pemasangan wajib diisi');
+    }
+
+    const { token, perangkat } = await deviceService.tukarKode(body.kode);
+    pasangCookiePerangkat(res, token);
+
+    res.json({
+      data: {
+        terpasang: true,
+        deviceId: perangkat.id,
+        label: perangkat.label,
+        cafeId: perangkat.cafeId,
+      },
+    });
+  }),
+);
+
+// GET /api/pos/terpasang — apakah peramban ini sudah menjadi terminal?
+//
+// Dipakai layar /kasir untuk memilih antara formulir kode dan daftar petugas,
+// tanpa harus menebaknya dari sebuah 401.
+posRouter.get(
+  '/pos/terpasang',
   perangkatAccess,
   asyncHandler(async (req, res) => {
-    const dariHeader = req.headers['x-device-token'];
-    const token = typeof dariHeader === 'string' ? dariHeader.trim() : null;
-
-    // Kalau tokennya datang dari cookie (bukan header), perangkat ini memang
-    // sudah terpasang — tidak ada yang perlu dikerjakan, dan tidak ada token
-    // untuk dipasang ulang karena kami tidak pernah menyimpannya.
-    if (token) pasangCookiePerangkat(res, token);
-
     res.json({
       data: {
         terpasang: true,

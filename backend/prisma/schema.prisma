@@ -950,7 +950,19 @@ model CashierDevice {
   label  String
 
   /// SHA-256 token perangkat. Unik lintas sistem: satu token, satu terminal.
-  tokenHash String @unique @map("token_hash")
+  ///
+  /// NULL selama terminal belum dipasangkan: sebuah terminal lahir hanya
+  /// sebagai nama + kode pemasangan, dan tokennya baru terbit ketika kodenya
+  /// ditukar di perangkat yang bersangkutan.
+  tokenHash String? @unique @map("token_hash")
+
+  /// SHA-256 kode pemasangan sekali pakai (lihat `lib/kodePemasangan.ts`).
+  kodeHash          String?   @unique @map("kode_hash")
+  kodeBerlakuHingga DateTime? @map("kode_berlaku_hingga")
+  kodeDipakaiPada   DateTime? @map("kode_dipakai_pada")
+
+  /// Kapan terminal ini benar-benar menukar kodenya menjadi token.
+  terpasangPada DateTime? @map("terpasang_pada")
 
   aktif           Boolean   @default(true)
   terakhirDipakai DateTime? @map("terakhir_dipakai")

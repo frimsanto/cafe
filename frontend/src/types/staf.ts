@@ -52,15 +52,24 @@ export interface PerangkatDTO {
   dicabutPada: string | null;
   createdAt: string;
   shiftAktif: { id: string; kasir: string; dibukaPada: string } | null;
+
+  /** Sudah pernah menukar kodenya menjadi token di sebuah perangkat. */
+  terpasang: boolean;
+  terpasangPada: string | null;
+  /** Kapan kode pemasangan berakhir; null bila tidak sedang menunggu. */
+  kodeBerlakuHingga: string | null;
+  /** Kode masih bisa dipakai sekarang (dihitung server). */
+  kodeBerlaku: boolean;
 }
 
 /**
  * Balasan pendaftaran terminal.
  *
- * `token` hanya ada DI SINI dan hanya sekali. Ia tidak pernah muncul lagi di
- * `PerangkatDTO` mana pun, karena server menyimpan hash-nya saja.
+ * `kode` hanya ada DI SINI dan hanya sekali — server menyimpan hash-nya saja.
+ * Ia BUKAN token perangkat: token lahir kelak di tablet yang bersangkutan saat
+ * kode ini ditukar, dan tidak pernah terlihat manusia mana pun.
  */
 export interface PerangkatBaruDTO {
   perangkat: PerangkatDTO;
-  token: string;
+  kode: string;
 }

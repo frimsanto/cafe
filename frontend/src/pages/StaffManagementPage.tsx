@@ -214,6 +214,12 @@ export default function StaffManagementPage() {
         perangkat={perangkat}
         loading={loading}
         sibuk={sibuk}
+        onTerbitkanKode={(p) =>
+          perangkatApi.terbitkanKode(p.id).then(async (hasil) => {
+            await muat();
+            return hasil;
+          })
+        }
         onDaftarkan={(label) =>
           perangkatApi.daftarkan(label).then(async (hasil) => {
             await muat();

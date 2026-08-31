@@ -54,18 +54,15 @@ interface OpsiPos extends Omit<RequestInit, 'body'> {
   json?: unknown;
   /** Body multipart (unggah foto). Content-Type dibiarkan diisi peramban. */
   form?: FormData;
-  /** Token perangkat, HANYA saat pemasangan pertama. */
-  tokenPerangkat?: string;
 }
 
 export async function posFetch<T>(path: string, opsi: OpsiPos = {}): Promise<T> {
-  const { json, form, tokenPerangkat, headers, ...sisa } = opsi;
+  const { json, form, headers, ...sisa } = opsi;
 
   const h = new Headers(headers);
   if (json !== undefined) h.set('Content-Type', 'application/json');
   // `FormData` TIDAK boleh diberi Content-Type manual: peramban yang menyusun
   // boundary-nya, dan menimpanya membuat multipart-nya tidak bisa dibaca server.
-  if (tokenPerangkat) h.set('x-device-token', tokenPerangkat);
 
   let response: Response;
   try {

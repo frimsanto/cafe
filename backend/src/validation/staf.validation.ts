@@ -172,3 +172,55 @@ export function parseBukaSesi(body: unknown): BukaSesiInput {
   }
   return { userId, pin: bacaPin(obj.pin, 'pin') };
 }
+
+/**
+ * Nama terminal yang akan dilihat manusia di layar pemilik.
+ *
+ * ── Kenapa ini divalidasi sama sekali ──
+ *
+ * Di produksi, tiga terminal pernah terdaftar bernama `0b41506b3ca29a87…`,
+ * `budiman@gmail.com`, dan `123123`. Ketiganya bukan nama — ketiganya adalah
+ * gejala: pemilik salah menempelkan token perangkat, alamat email, dan entah
+ * apa ke kolom nama, karena alur lamanya memang membingungkan.
+ *
+ * Alur pemasangannya sudah diperbaiki, tapi validasi ini tetap dipasang karena
+ * ia menangkap kekeliruan itu SAAT TERJADI, dengan kalimat yang menjelaskan apa
+ * yang sebenarnya terjadi — jauh lebih menolong daripada sebuah baris tak
+ * terbaca yang baru disadari salah seminggu kemudian.
+ */
+export function parseLabelPerangkat(nilai: unknown): string {
+  if (typeof nilai !== 'string') {
+    throw ApiError.badRequest('Nama terminal wajib diisi');
+  }
+  // Spasi berturut dirapikan; nama dengan dua spasi di tengah dan tanpa spasi
+  // terlihat sama di layar tapi tidak pernah cocok saat dicari.
+  const bersih = nilai.replace(/\s+/g, ' ').trim();
+
+  if (bersih === '') throw ApiError.badRequest('Nama terminal wajib diisi');
+  if (bersih.length < 2) {
+    throw ApiError.badRequest('Nama terminal terlalu pendek — pakai nama tempatnya, mis. "Kasir Depan"');
+  }
+  if (bersih.length > 60) {
+    throw ApiError.badRequest('Nama terminal maksimal 60 karakter');
+  }
+
+  // Token perangkat: 64 heksadesimal. Ambangnya 16 supaya potongan token yang
+  // ter-copy sebagian ikut tertangkap.
+  if (/^[0-9a-f]{16,}$/i.test(bersih)) {
+    throw ApiError.badRequest(
+      'Itu tampaknya token perangkat, bukan nama terminal. Isi nama tempatnya saja, mis. "Kasir Depan".',
+    );
+  }
+  if (/^KSR-?[0-9A-Z]{4}-?[0-9A-Z]{4}$/i.test(bersih)) {
+    throw ApiError.badRequest(
+      'Itu kode pemasangan, bukan nama terminal. Kode dimasukkan di layar /kasir, bukan di sini.',
+    );
+  }
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bersih)) {
+    throw ApiError.badRequest(
+      'Itu alamat email, bukan nama terminal. Isi nama tempatnya saja, mis. "Kasir Depan".',
+    );
+  }
+
+  return bersih;
+}

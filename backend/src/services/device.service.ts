@@ -3,6 +3,12 @@ import type { CashierDevice } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { ApiError } from '../lib/ApiError';
 import { AKSI_AUDIT, auditLogService, type AktorAudit } from './auditLog.service';
+import {
+  buatKode,
+  hashKode,
+  kedaluwarsaKode,
+  normalisasiKode,
+} from '../lib/kodePemasangan';
 
 /**
  * Perangkat POS bersama — terminal yang berdiri di meja kasir.
@@ -67,11 +73,26 @@ export interface PerangkatDTO {
   createdAt: string;
   /** Shift yang sedang berjalan di terminal ini, bila ada. */
   shiftAktif: { id: string; kasir: string; dibukaPada: string } | null;
+
+  // ── Pemasangan ─────────────────────────────────────────────────────────────
+  //
+  // Sebuah terminal melewati tiga keadaan, dan layar pemilik harus bisa
+  // membedakannya: BARU DIBUAT (punya kode, belum ditukar), TERPASANG (kodenya
+  // sudah menjadi token di sebuah tablet), dan DICABUT.
+
+  /** Sudah pernah menukar kodenya menjadi token di sebuah perangkat. */
+  terpasang: boolean;
+  terpasangPada: string | null;
+  /** Kapan kode pemasangan yang berlaku berakhir; null bila tidak sedang menunggu. */
+  kodeBerlakuHingga: string | null;
+  /** Kode masih bisa dipakai sekarang. */
+  kodeBerlaku: boolean;
 }
 
 function toPerangkatDTO(
   d: CashierDevice,
   shift?: { id: string; dibukaPada: Date; user: { name: string } } | null,
+  sekarang: Date = new Date(),
 ): PerangkatDTO {
   return {
     id: d.id,
@@ -83,8 +104,17 @@ function toPerangkatDTO(
     shiftAktif: shift
       ? { id: shift.id, kasir: shift.user.name, dibukaPada: shift.dibukaPada.toISOString() }
       : null,
+    terpasang: d.tokenHash !== null,
+    terpasangPada: d.terpasangPada?.toISOString() ?? null,
+    kodeBerlakuHingga: d.kodeBerlakuHingga?.toISOString() ?? null,
+    kodeBerlaku:
+      d.kodeHash !== null &&
+      d.kodeDipakaiPada === null &&
+      d.kodeBerlakuHingga !== null &&
+      d.kodeBerlakuHingga.getTime() > sekarang.getTime(),
   };
 }
+
 
 export const deviceService = {
   /** Daftar terminal sebuah kafe, beserta shift yang sedang berjalan. */
@@ -112,18 +142,36 @@ export const deviceService = {
    * pun yang bisa mengeluarkannya lagi. Kalau hilang, yang benar adalah mencabut
    * perangkat itu dan mendaftarkannya ulang.
    */
+  /**
+   * Daftarkan terminal baru — yang terbit adalah KODE, bukan token.
+   *
+   * ── Kenapa berubah ──
+   *
+   * Sebelumnya endpoint ini mengembalikan token 64 heksadesimal dan menyuruh
+   * pemilik membawanya ke tablet kasir. Di produksi itu berakhir sebagai tiga
+   * terminal bernama `0b41506b3ca29a87…`, `budiman@gmail.com`, dan `123123`,
+   * dicabut semua dalam dua setengah menit tanpa satu pun pernah terpasang:
+   * tokennya tidak bisa dibawa manusia dari satu layar ke layar lain.
+   *
+   * Sekarang terminal LAHIR TANPA TOKEN. Yang diperlihatkan pemilik adalah kode
+   * pendek berumur 15 menit; tokennya baru terbit di
+   * `tukarKode` di perangkat yang bersangkutan, dan tidak ada manusia yang
+   * pernah melihatnya.
+   */
   async daftarkan(
     cafeId: string,
     label: string,
     aktor: AktorAudit,
-  ): Promise<{ perangkat: PerangkatDTO; token: string }> {
-    const token = randomBytes(PANJANG_TOKEN_BYTE).toString('hex');
+  ): Promise<{ perangkat: PerangkatDTO; kode: string }> {
+    const kode = buatKode();
 
     const perangkat = await prisma.cashierDevice.create({
       data: {
         cafeId,
         label,
-        tokenHash: hashToken(token),
+        tokenHash: null,
+        kodeHash: hashKode(kode),
+        kodeBerlakuHingga: kedaluwarsaKode(),
         dibuatOleh: aktor.userId ?? null,
         aktif: true,
       },
@@ -135,13 +183,128 @@ export const deviceService = {
       aktor,
       entityType: 'cashier_device',
       entityId: perangkat.id,
-      // Labelnya boleh dicatat; tokennya tidak pernah — `auditRedaksi` menyaring
-      // kunci apa pun yang mengandung "token" sebagai jaring pengaman kedua.
+      // Labelnya boleh dicatat; kode & tokennya tidak pernah.
       nilaiBaru: { label: perangkat.label },
       deviceId: perangkat.id,
     });
 
-    return { perangkat: toPerangkatDTO(perangkat), token };
+    return { perangkat: toPerangkatDTO(perangkat), kode };
+  },
+
+  /**
+   * Terbitkan kode baru untuk terminal yang sudah ada.
+   *
+   * Dibutuhkan karena kode kedaluwarsa dalam 15 menit, dan
+   * pemilik yang terlambat berjalan ke terminalnya tidak boleh dipaksa mencabut
+   * lalu mendaftarkan ulang — pencabutan memutus riwayat shift terminal itu,
+   * sedangkan yang sebenarnya terjadi hanyalah selembar kode yang basi.
+   *
+   * Berlaku juga untuk terminal yang SUDAH terpasang: tabletnya rusak atau
+   * cookienya terhapus, dan pemilik perlu memasangkannya di perangkat
+   * pengganti. Token lama ikut dibuang saat kodenya ditukar.
+   */
+  async terbitkanKode(
+    cafeId: string,
+    deviceId: string,
+    aktor: AktorAudit,
+  ): Promise<{ perangkat: PerangkatDTO; kode: string }> {
+    const ada = await prisma.cashierDevice.findFirst({
+      where: { id: deviceId, cafeId },
+    });
+    if (!ada) throw ApiError.notFound('Terminal tidak ditemukan');
+    if (!ada.aktif || ada.dicabutPada !== null) {
+      throw ApiError.badRequest(
+        'Terminal ini sudah dicabut. Daftarkan terminal baru.',
+      );
+    }
+
+    const kode = buatKode();
+    const perangkat = await prisma.cashierDevice.update({
+      where: { id: ada.id },
+      data: {
+        kodeHash: hashKode(kode),
+        kodeBerlakuHingga: kedaluwarsaKode(),
+        kodeDipakaiPada: null,
+      },
+    });
+
+    await auditLogService.catat({
+      cafeId,
+      aksi: AKSI_AUDIT.PERANGKAT_DIDAFTARKAN,
+      aktor,
+      entityType: 'cashier_device',
+      entityId: perangkat.id,
+      nilaiBaru: { label: perangkat.label, kodeDiterbitkanUlang: true },
+      deviceId: perangkat.id,
+    });
+
+    return { perangkat: toPerangkatDTO(perangkat), kode };
+  },
+
+  /**
+   * Tukar kode pemasangan dengan token perangkat.
+   *
+   * Ini SATU-SATUNYA tempat token perangkat lahir. Pemanggilnya (`/api/pos/pasang`)
+   * langsung memasangnya sebagai cookie HttpOnly dan tidak pernah mengembalikan
+   * tokennya ke JavaScript.
+   *
+   * Kodenya dilumpuhkan pada penukaran yang sama: `kodeHash` dikosongkan
+   * sehingga tidak ada percobaan kedua yang bisa cocok, bahkan bila seseorang
+   * memfoto layarnya. Itulah yang membuat kode 40-bit ini memadai — bukan
+   * panjangnya, melainkan sekali pakainya.
+   */
+  async tukarKode(kodeMentah: string): Promise<{ token: string; perangkat: CashierDevice }> {
+    const kode = normalisasiKode(kodeMentah);
+    // Bentuk yang salah ditolak tanpa menyentuh database sama sekali.
+    if (!kode) throw ApiError.badRequest('Kode pemasangan tidak dikenali');
+
+    const perangkat = await prisma.cashierDevice.findUnique({
+      where: { kodeHash: hashKode(kode) },
+    });
+
+    // Satu pesan untuk kode salah, kode terpakai, kode kedaluwarsa, DAN terminal
+    // yang dicabut. Membedakannya memberi tahu penebak bahwa tebakannya
+    // "hampir benar", dan itu satu-satunya keterangan yang berguna baginya.
+    const tolak = () =>
+      new ApiError(400, 'Kode pemasangan tidak berlaku. Minta kode baru ke pemilik.');
+
+    if (!perangkat) throw tolak();
+    if (!perangkat.aktif || perangkat.dicabutPada !== null) throw tolak();
+    if (perangkat.kodeDipakaiPada !== null) throw tolak();
+    if (
+      perangkat.kodeBerlakuHingga === null ||
+      perangkat.kodeBerlakuHingga.getTime() <= Date.now()
+    ) {
+      throw tolak();
+    }
+
+    const token = randomBytes(PANJANG_TOKEN_BYTE).toString('hex');
+    const sekarang = new Date();
+
+    const diperbarui = await prisma.cashierDevice.update({
+      where: { id: perangkat.id },
+      data: {
+        tokenHash: hashToken(token),
+        terpasangPada: sekarang,
+        kodeDipakaiPada: sekarang,
+        // Dikosongkan, bukan sekadar ditandai terpakai: baris yang tidak lagi
+        // memuat hash kode tidak bisa dicocokkan oleh percobaan apa pun.
+        kodeHash: null,
+        kodeBerlakuHingga: null,
+      },
+    });
+
+    await auditLogService.catat({
+      cafeId: diperbarui.cafeId,
+      aksi: AKSI_AUDIT.PERANGKAT_DIDAFTARKAN,
+      aktor: { userId: null, role: null },
+      entityType: 'cashier_device',
+      entityId: diperbarui.id,
+      nilaiBaru: { label: diperbarui.label, terpasang: true },
+      deviceId: diperbarui.id,
+    });
+
+    return { token, perangkat: diperbarui };
   },
 
   /**
@@ -206,6 +369,10 @@ export const deviceService = {
       where: { tokenHash: hash },
     });
     if (!perangkat) return null;
+
+    // Terminal yang belum pernah menukar kodenya tidak punya token sama sekali,
+    // jadi tidak ada token mana pun yang boleh cocok dengannya.
+    if (perangkat.tokenHash === null) return null;
 
     const a = Buffer.from(perangkat.tokenHash, 'utf8');
     const b = Buffer.from(hash, 'utf8');

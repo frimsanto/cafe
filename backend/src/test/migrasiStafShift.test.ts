@@ -36,6 +36,16 @@ import {
 
 const MIGRASI = '20260901000000_staf_shift_absensi';
 
+/**
+ * Migrasi TERAKHIR yang ada saat berkas ini ditulis.
+ *
+ * Dipisahkan dari `MIGRASI` di atas: yang itu adalah migrasi yang isinya diuji
+ * berkas ini, sedangkan yang ini hanya penjaga urutan. Menambah migrasi baru
+ * berarti memperbarui baris ini — dan itu memang disengaja, supaya penambahnya
+ * sempat memikirkan apakah anggapan di berkas ini masih berlaku.
+ */
+const MIGRASI_TERAKHIR = '20260902000000_kode_pemasangan_terminal';
+
 const TABEL_BARU = [
   'shift_templates',
   'shift_schedules',
@@ -163,7 +173,7 @@ describe('migrasi di atas database kosong', () => {
     expect(semua).toContain(MIGRASI);
     // Kalau kelak ada migrasi baru sesudahnya, uji ini mengingatkan supaya
     // urutan & anggapan di berkas ini ditinjau ulang.
-    expect(semua.at(-1)).toBe(MIGRASI);
+    expect(semua.at(-1)).toBe(MIGRASI_TERAKHIR);
   });
 
   it('membuat kedelapan tabel baru', async () => {

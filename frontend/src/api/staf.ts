@@ -69,14 +69,21 @@ export const perangkatApi = {
   /**
    * Daftarkan terminal baru.
    *
-   * Balasannya memuat token — SATU-SATUNYA kali token itu pernah terlihat.
-   * Pemanggil wajib menampilkannya sekarang juga; tidak ada endpoint yang bisa
-   * mengeluarkannya lagi, karena server hanya menyimpan hash-nya.
+   * Balasannya memuat KODE PEMASANGAN — satu-satunya kali kode itu terlihat,
+   * dan ia berumur pendek. Kalau kedaluwarsa, `terbitkanKode` di bawah membuat
+   * yang baru tanpa perlu mencabut terminalnya.
    */
   daftarkan(label: string): Promise<PerangkatBaruDTO> {
     return apiFetch<PerangkatBaruDTO>('/api/perangkat', {
       method: 'POST',
       body: JSON.stringify({ label }),
+    });
+  },
+
+  /** Terbitkan ulang kode pemasangan untuk terminal yang sudah ada. */
+  terbitkanKode(deviceId: string): Promise<PerangkatBaruDTO> {
+    return apiFetch<PerangkatBaruDTO>(`/api/perangkat/${id(deviceId)}/kode`, {
+      method: 'POST',
     });
   },
 

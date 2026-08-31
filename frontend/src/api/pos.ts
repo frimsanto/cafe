@@ -35,16 +35,29 @@ export const posApi = {
    * cookie yang tidak bisa dibaca JavaScript — termasuk oleh kode kita sendiri,
    * yang berarti tidak ada tempat di aplikasi ini yang bisa membocorkannya.
    */
-  pasang(token: string): Promise<PemasanganDTO> {
+  /**
+   * Tukar KODE PEMASANGAN dengan cookie perangkat.
+   *
+   * Kodenya pendek dan dibaca manusia; tokennya lahir di server pada permintaan
+   * ini dan langsung menjadi cookie HttpOnly. Tidak ada tempat di aplikasi ini
+   * yang pernah memegang token perangkat — termasuk kode kita sendiri.
+   */
+  pasang(kode: string): Promise<PemasanganDTO> {
     return posFetch<PemasanganDTO>('/api/pos/pasang', {
       method: 'POST',
-      tokenPerangkat: token,
+      json: { kode },
     });
   },
 
-  /** Cek apakah terminal ini sudah terpasang (cookie masih berlaku). */
+  /**
+   * Cek apakah terminal ini sudah terpasang (cookie masih berlaku).
+   *
+   * Endpoint TERPISAH dari `pasang`, dan itu penting: memakai ulang `pasang`
+   * untuk mengecek status berarti setiap pemuatan halaman /kasir menembak
+   * endpoint yang dibatasi laju penukaran kode.
+   */
   statusPerangkat(): Promise<PemasanganDTO> {
-    return posFetch<PemasanganDTO>('/api/pos/pasang', { method: 'POST' });
+    return posFetch<PemasanganDTO>('/api/pos/terpasang');
   },
 
   petugas(): Promise<PetugasRingkasDTO[]> {
